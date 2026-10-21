@@ -29,6 +29,9 @@ Prvé spustenie po inštalácii: `npm install` (Electron musí mať povolený in
   `%APPDATA%\APIX Map Studio\thumbs`), pri prejdení myšou sa ukáže veľký náhľad.
 - Textúry, ktoré exportér nenájde (GR2 má uloženú cestu `d:\…`), sa dohľadajú vedľa zdrojového
   modelu v packu alebo podľa hernej cesty a prevedú cez texconv na PNG s názvom, ktorý čaká FBX.
+- Voľné pokladanie: objekt sadne na to, čo je pod kurzorom (terén alebo iný objekt, napr. strecha), pri
+  pohľade do oblohy sa položí do vzduchu. **Alt + koliesko** alebo **PgUp / PgDn** ho zdvihne / zníži
+  (Shift po 2 m), **Home** ho vráti na povrch. Platí aj pre prefaby.
 - Výber kliknutím, posun (W) a rotácia (E) úchytmi, položenie na terén (G), duplikovanie (Ctrl+D),
   mazanie (Del), späť/znova (Ctrl+Z / Ctrl+Y), presné hodnoty v paneli Vlastnosti.
 - Uloženie (Ctrl+S) zapíše `AreaData.txt` každého terénu presne vo formáte editora

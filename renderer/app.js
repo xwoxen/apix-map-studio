@@ -285,12 +285,12 @@ function captureGroup(list) {
   const c = centroid(list);
   return list.map((o) => { const p = toScene(o); return { crc: o.crc, dx: +(p.x - c.x).toFixed(3), dz: +(p.z - c.z).toFixed(3), lift: +(p.y - heights.at(p.x, p.z)).toFixed(3), yaw: o.yaw }; });
 }
-function placeGroup(items, x, z, yaw = 0) {
+function placeGroup(items, x, z, yaw = 0, extra = 0) {
   const r = rad(yaw);
   return items.map((it) => {
     const v = new THREE.Vector3(it.dx, 0, it.dz).applyAxisAngle(UP, r);
     const px = x + v.x, pz = z + v.z;
-    const o = { id: nextId++, crc: it.crc, ...fromScene(new THREE.Vector3(px, heights.at(px, pz) + (it.lift || 0), pz)), yaw: ((((it.yaw || 0) + yaw) % 360) + 360) % 360, pitch: 0, roll: 0, bias: 0 };
+    const o = { id: nextId++, crc: it.crc, ...fromScene(new THREE.Vector3(px, heights.at(px, pz) + (it.lift || 0) + extra, pz)), yaw: ((((it.yaw || 0) + yaw) % 360) + 360) % 360, pitch: 0, roll: 0, bias: 0 };
     return o;
   });
 }
@@ -459,9 +459,9 @@ function ghostify(node) {
 async function startPlacingPrefab(name) {
   stopPlacing();
   const data = await window.studio.prefab(name);
-  placing = { prefab: name, items: data.items, name: `prefab ${name}`, ghost: new THREE.Group(), yaw: 0 };
+  placing = { prefab: name, items: data.items, name: `prefab ${name}`, ghost: new THREE.Group(), yaw: 0, lift: 0, point: null };
   scene.add(placing.ghost);
-  $("placing").hidden = false; $("placing-name").textContent = placing.name;
+  $("placing").hidden = false; $("placing-name").textContent = placing.name; showLift();
   select(null); renderLibrary(); $("lib-preview").hidden = true;
   for (const it of data.items) {
     const { node } = await template(it.crc);
@@ -476,9 +476,9 @@ async function startPlacingPrefab(name) {
 async function startPlacing(crc) {
   stopPlacing();
   const info = libByCrc.get(crc);
-  placing = { crc, name: info ? info.name : String(crc), ghost: new THREE.Group(), yaw: 0 };
+  placing = { crc, name: info ? info.name : String(crc), ghost: new THREE.Group(), yaw: 0, lift: 0, point: null };
   scene.add(placing.ghost);
-  $("placing").hidden = false; $("placing-name").textContent = placing.name;
+  $("placing").hidden = false; $("placing-name").textContent = placing.name; showLift();
   select(null); renderLibrary(); showPreview(crc);
   const { node, info: model } = await template(crc);
   if (!placing || placing.crc !== crc) return;
@@ -487,6 +487,43 @@ async function startPlacing(crc) {
   placing.ghost.add(g);
   if (model.kind === "missing") setMsg(`Model ${model.model} sa nenašiel, objekt bude len ako značka.`, true);
 }
+// Free placement: the ghost sits on whatever is under the cursor (terrain or another object), in the air on a
+// level plane when nothing is hit, and Alt + wheel / PageUp / PageDown lift it; Home puts it back on the surface.
+const placePlane = new THREE.Plane(), planeHit = new THREE.Vector3();
+function placementPoint(e) {
+  const hit = pick(e, [terrainGroup, layer.root])[0];
+  let p;
+  if (hit) p = hit.point.clone();
+  else {
+    const focus = fly.focusPoint();
+    placePlane.set(UP, -(placing.point ? placing.point.y : focus.y));
+    // looking up past the plane: drop it in the air as far away as the point the camera looks at
+    const far = Math.min(camera.position.distanceTo(focus), 150);
+    p = ray.ray.intersectPlane(placePlane, planeHit) && planeHit.distanceTo(camera.position) < far * 3 ? planeHit.clone() : ray.ray.at(far, new THREE.Vector3());
+  }
+  const w = map.size[0] * 256, d = map.size[1] * 256;            // objects must stay on a terrain to be saved
+  p.x = THREE.MathUtils.clamp(p.x, 0.01, w - 0.01); p.z = THREE.MathUtils.clamp(p.z, 0.01, d - 0.01);
+  return p;
+}
+function updateGhost() {
+  if (!placing || !placing.point) return;
+  const p = placing.point;
+  placing.ghost.position.set(p.x, p.y + placing.lift, p.z);
+  placing.ghost.rotation.y = rad(placing.yaw);
+}
+function showLift() {
+  $("placing-lift").textContent = placing && placing.lift ? ` · výška ${placing.lift > 0 ? "+" : ""}${placing.lift.toFixed(1)} m` : "";
+}
+function liftPlacing(dy) {
+  if (!placing) return;
+  placing.lift = dy === null ? 0 : Math.round((placing.lift + dy) * 10) / 10;
+  showLift(); updateGhost();
+}
+renderer.domElement.addEventListener("wheel", (e) => {
+  if (!placing || !e.altKey) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  liftPlacing((e.deltaY < 0 ? 1 : -1) * (e.shiftKey ? 2 : 0.5));
+}, { passive: false, capture: true });
 function stopPlacing() {
   if (!placing) return;
   scene.remove(placing.ghost); placing = null;
@@ -635,13 +672,13 @@ function pick(e, targets) {
 }
 renderer.domElement.addEventListener("pointermove", (e) => {
   if (!map) return;
+  if (placing) { const p = placementPoint(e); if (p) { placing.point = p; updateGhost(); } }
   const hit = pick(e, [terrainGroup])[0];
   if (hit) {
     const m = fromScene(hit.point);
     $("st-cursor").textContent = `x ${Math.round(m.x)} · y ${Math.round(m.y)} · výška ${(hit.point.y).toFixed(1)} m`;
     lastObjectHit = hit.point.clone();
     if (walker.placing) walker.setPosition(hit.point.x, hit.point.z);
-    if (placing) { placing.ghost.position.set(hit.point.x, heights.at(hit.point.x, hit.point.z), hit.point.z); placing.ghost.rotation.y = rad(placing.yaw); }
     if (mode === "terrain") { cursor.update(heights, hit.point.x, hit.point.z, brush.radius); lastHit = hit.point; }
   } else if (mode === "terrain") cursor.line.visible = false;
   if (painting && hit) queuePaint(hit.point, e);
@@ -677,18 +714,21 @@ renderer.domElement.addEventListener("pointerup", (e) => {
     return;
   }
   if (placing && placing.prefab) {
-    const hit = pick(e, [terrainGroup])[0];
-    if (!hit) return;
-    const added = placeGroup(placing.items, hit.point.x, hit.point.z, placing.yaw);
+    const p = placementPoint(e);
+    if (!p) return;
+    placing.point = p;
+    // the group keeps its shape over the terrain and rises with the surface it was put on (a roof, the air)
+    const added = placeGroup(placing.items, p.x, p.z, placing.yaw, p.y - heights.at(p.x, p.z) + placing.lift);
     change(() => { objects.push(...added); });
     setMsg(`Položený ${placing.name} (${added.length} objektov).`);
     if (!e.shiftKey) { stopPlacing(); selectMany(added.map((o) => o.id)); }
     return;
   }
   if (placing) {
-    const hit = pick(e, [terrainGroup])[0];
-    if (!hit) return;
-    const p = new THREE.Vector3(hit.point.x, heights.at(hit.point.x, hit.point.z), hit.point.z);
+    const p = placementPoint(e);
+    if (!p) return;
+    placing.point = p.clone();
+    p.y += placing.lift;
     const o = { id: nextId++, crc: placing.crc, ...fromScene(p), yaw: placing.yaw, pitch: 0, roll: 0, bias: 0 };
     change(() => { objects.push(o); });
     setMsg(`Položené: ${placing.name}.`);
@@ -810,7 +850,9 @@ window.addEventListener("keydown", (e) => {
   else if (k === "2") setMode("rotate");
   else if (k === "g") $("snap").checked = !$("snap").checked;
   else if (k === "f") focusSelected();
-  else if (k === "r" && placing) placing.yaw = (placing.yaw + 45) % 360;
+  else if (k === "r" && placing) { placing.yaw = (placing.yaw + 45) % 360; updateGhost(); }
+  else if (placing && (k === "pageup" || k === "pagedown")) { e.preventDefault(); liftPlacing(k === "pageup" ? 0.5 : -0.5); }
+  else if (placing && k === "home") liftPlacing(null);
   else if (k === "escape") { if (placing) stopPlacing(); else select(null); }
 });
 function undo() { if (!undoStack.length) return; redoStack.push(restore(undoStack.pop())); updateUi(); }
@@ -1167,7 +1209,7 @@ window.__studio = {
     if (!fn) throw new Error(`Neznáma metóda ${method}; dostupné: ${Object.keys(API).join(", ")}`);
     return fn(params || {});
   },
-  setMainMode, setTool, save, undo, redo,
+  setMainMode, setTool, save, undo, redo, startPlacing, groundAt: (x, z) => heights.at(x, z),
   brush, get model() { return heights; }, get objects() { return objects; },
   get gizmo() { return gizmo; }, get pivot() { return pivot; }, select,
   // what a click at client (x, y) would hit: object ids (with the mesh name) in hit order
