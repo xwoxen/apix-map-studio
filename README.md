@@ -22,7 +22,7 @@ Prvé spustenie po inštalácii: `npm install` (Electron musí mať povolený in
   `_codex_granny_compiled\GrannyExporter.exe`, cache v `%APPDATA%\APIX Map Studio\model-cache`),
   stromy (SpeedTree) zatiaľ ako zjednodušený strom v správnej veľkosti, efekty ako žltá značka,
   neznáme CRC ako fialová kocka.
-- Knižnica ~3 900 objektov zo všetkých `apix-client\bin\pack\*\property` v poradí `Index`
+- Knižnica ~3 200 objektov zo všetkých `apix-client\bin\pack\*\property` v poradí `Index`
   (prvý vlastník CRC vyhráva ako v klientovi) plus `property` z WorldEditora. Objekty, ktorých model v klientovi
   nie je, sa v zozname neukazujú (kontrola mapy ich však pozná).
   Každý objekt má 3D náhľad (vykreslí sa pri prvom zobrazení riadku, uloží sa do
