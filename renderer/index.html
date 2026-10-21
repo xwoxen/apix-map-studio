@@ -17,8 +17,8 @@
   <button type="button" id="btn-save" class="primary" title="Uložiť objekty (Ctrl+S)" disabled>Uložiť</button>
   <span class="sep"></span>
   <div class="seg" role="group" aria-label="Nástroj">
-    <button type="button" id="mode-move" aria-pressed="true" title="Posun (W)">Posun <kbd>W</kbd></button>
-    <button type="button" id="mode-rotate" aria-pressed="false" title="Rotácia (E)">Rotácia <kbd>E</kbd></button>
+    <button type="button" id="mode-move" aria-pressed="true" title="Posun (1)">Posun <kbd>1</kbd></button>
+    <button type="button" id="mode-rotate" aria-pressed="false" title="Rotácia (2)">Rotácia <kbd>2</kbd></button>
   </div>
   <label class="check" title="Objekt sa po posune položí na terén (G)"><input type="checkbox" id="snap" checked> Na terén <kbd>G</kbd></label>
   <span class="sep"></span>
@@ -102,6 +102,8 @@
     <div id="inspector" class="inspector-body"><p class="muted">Klikni na objekt v mape.</p></div>
     <div class="panel-head"><h2>Klávesy</h2></div>
     <dl class="keys" id="keys-terrain" hidden>
+      <dt>W A S D</dt><dd>pohyb po mape (Shift rýchlejšie)</dd>
+      <dt>Q / E</dt><dd>otočiť kameru</dd>
       <dt>Ľavé tlačidlo</dt><dd>maľovať</dd>
       <dt>Ctrl + ľavé</dt><dd>opačne (znížiť, zmazať)</dd>
       <dt>Alt + klik</dt><dd>vziať výšku, textúru, hladinu</dd>
@@ -112,10 +114,14 @@
       <dt>Ctrl+Z / Ctrl+Y</dt><dd>späť / znova</dd>
     </dl>
     <dl class="keys" id="keys-objects">
-      <dt>Ľavé tlačidlo</dt><dd>výber, otáčanie kamery</dd>
-      <dt>Pravé tlačidlo</dt><dd>posun kamery</dd>
+      <dt>W A S D</dt><dd>pohyb po mape (Shift rýchlejšie)</dd>
+      <dt>Q / E</dt><dd>otočiť kameru</dd>
       <dt>Koliesko</dt><dd>priblíženie</dd>
-      <dt>W / E</dt><dd>posun / rotácia</dd>
+      <dt>Pravé tlačidlo</dt><dd>otáčanie kamery</dd>
+      <dt>Stredné tlačidlo</dt><dd>posun kamery</dd>
+      <dt>Ľavý klik</dt><dd>výber (Shift pridá)</dd>
+      <dt>Ľavé ťahanie</dt><dd>výber obdĺžnikom</dd>
+      <dt>1 / 2</dt><dd>úchyty: posun / rotácia</dd>
       <dt>Del</dt><dd>zmazať</dd>
       <dt>Ctrl+D</dt><dd>duplikovať</dd>
       <dt>F</dt><dd>zamerať vybraný</dd>

@@ -538,7 +538,7 @@ app.whenReady().then(() => {
         }
         const image = await win.webContents.capturePage();
         fs.writeFileSync(shot, image.toPNG());
-        app.quit();
+        app.exit(0);                                   // test runs skip the unsaved-changes prompt
       }, Number(argValue("--shot-delay") || 0)));
     }
   });

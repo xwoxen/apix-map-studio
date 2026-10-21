@@ -354,7 +354,7 @@ function renderInspector() {
     <div class="sub">${info ? escapeHtml(info.type) + " · " : ""}CRC ${selected.crc}</div>
     ${["x", "y", "z", "yaw"].map((k) => `<div class="field"><label for="f-${k}">${k === "yaw" ? "rotácia" : k + " (cm)"}</label><input type="number" id="f-${k}" step="${k === "yaw" ? 15 : 50}"></div>`).join("")}
     <div class="row-actions"><button type="button" id="i-ground">Položiť na terén</button><button type="button" id="i-dup">Duplikovať</button><button type="button" id="i-copy">Kopírovať</button><button type="button" class="danger" id="i-del">Zmazať</button></div>
-    <p class="sub">Shift + klik pridá ďalší objekt, Shift + ťahanie vyberie obdĺžnikom.</p>`;
+    <p class="sub">Shift + klik pridá ďalší objekt, ťahanie po prázdnom mieste vyberie obdĺžnikom.</p>`;
   renderInspectorValues();
   $("i-copy").addEventListener("click", copySelection);
   for (const k of ["x", "y", "z", "yaw"]) {
@@ -506,9 +506,7 @@ function setMainMode(m) {
   }
   if (m === "terrain") {
     stopPlacing(); select(null);
-    orbit.mouseButtons = { LEFT: -1, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
   } else {
-    orbit.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
     cursor.line.visible = false;
   }
   if (view) view.setAttrVisible(m === "terrain" && brush.tool === "attr");
@@ -692,12 +690,12 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   select(hit ? hit.object.userData.id : null);
 });
 
-// Shift + drag in object mode: rectangle selection (captured before the camera controls see the event).
+// Left drag in object mode: rectangle selection (Shift adds to the selection). A left click without
+// moving still selects through the click handler; the gizmo keeps its own drags.
 let marquee = null;
 viewport.addEventListener("pointerdown", (e) => {
-  if (!map || mode !== "objects" || placing || !e.shiftKey || e.button !== 0) return;
-  marquee = { x0: e.clientX, y0: e.clientY, el: null, moved: false };
-  orbit.enabled = false;
+  if (!map || mode !== "objects" || placing || e.button !== 0 || gizmo.axis) return;
+  marquee = { x0: e.clientX, y0: e.clientY, el: null, moved: false, add: e.shiftKey };
 }, true);
 window.addEventListener("pointermove", (e) => {
   if (!marquee) return;
@@ -712,7 +710,6 @@ window.addEventListener("pointerup", (e) => {
   if (!marquee) return;
   const m = marquee;
   setTimeout(() => { marquee = null; }, 0);
-  orbit.enabled = true;
   if (m.el) m.el.remove();
   if (!m.moved) return;
   const r = viewport.getBoundingClientRect();
@@ -724,15 +721,54 @@ window.addEventListener("pointerup", (e) => {
     const sx = r.left + (p.x + 1) / 2 * r.width, sy = r.top + (1 - p.y) / 2 * r.height;
     if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) ids.push(o.id);
   }
-  selectMany(ids, true);
+  selectMany(ids, m.add);
   setMsg(`Vybraných ${selection.size} objektov.`);
 });
 
 /* ---------- keyboard & buttons ---------- */
 
+/* WASD / arrows move the camera over the map, Q/E turn it, Shift = faster (like WorldEditor). */
+const held = new Set();
+const MOVE_KEYS = new Set(["w", "a", "s", "d", "q", "e", "arrowup", "arrowdown", "arrowleft", "arrowright"]);
+window.addEventListener("keyup", (e) => { held.delete(e.key.toLowerCase()); if (e.key === "Shift") held.delete("shift"); });
+window.addEventListener("blur", () => held.clear());
+const moveClock = new THREE.Clock();
+function moveCamera() {
+  const dt = Math.min(0.1, moveClock.getDelta());
+  if (!held.size || !map) return;
+  const has = (...k) => k.some((x) => held.has(x));
+  const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y = 0;
+  if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+  fwd.normalize();
+  const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  const dist = camera.position.distanceTo(orbit.target);
+  const speed = Math.max(15, dist * 0.9) * (has("shift") ? 3 : 1) * dt;
+  const step = new THREE.Vector3();
+  if (has("w", "arrowup")) step.add(fwd);
+  if (has("s", "arrowdown")) step.sub(fwd);
+  if (has("d", "arrowright")) step.add(right);
+  if (has("a", "arrowleft")) step.sub(right);
+  if (step.lengthSq()) {
+    step.normalize().multiplyScalar(speed);
+    const W = map.size[0] * 256, D = map.size[1] * 256;
+    const nt = orbit.target.clone().add(step);
+    nt.x = Math.max(-20, Math.min(W + 20, nt.x)); nt.z = Math.max(-20, Math.min(D + 20, nt.z));
+    nt.y = heights.at(Math.max(0, Math.min(W, nt.x)), Math.max(0, Math.min(D, nt.z)));
+    camera.position.add(nt.clone().sub(orbit.target));
+    orbit.target.copy(nt);
+  }
+  const turn = (has("q") ? 1 : 0) - (has("e") ? 1 : 0);
+  if (turn) {
+    const off = camera.position.clone().sub(orbit.target).applyAxisAngle(new THREE.Vector3(0, 1, 0), turn * 1.6 * dt);
+    camera.position.copy(orbit.target).add(off);
+  }
+}
+
 window.addEventListener("keydown", (e) => {
   if (e.target.matches && e.target.matches("input, select, textarea")) return;
   const k = e.key.toLowerCase();
+  if (e.key === "Shift") held.add("shift");
+  if (MOVE_KEYS.has(k) && !e.ctrlKey && !e.altKey && !e.metaKey) { held.add(k); e.preventDefault(); return; }
   if (k === "[" || k === "]") { const r = $("radius"); r.value = Number(r.value) + (k === "]" ? 2 : -2); r.dispatchEvent(new Event("input")); return; }
   if (k === "t" && !e.ctrlKey) { setMainMode(mode === "terrain" ? "objects" : "terrain"); return; }
   if (e.ctrlKey && k === "s") { e.preventDefault(); save(); }
@@ -745,8 +781,8 @@ window.addEventListener("keydown", (e) => {
   else if (e.ctrlKey && k === "v") { e.preventDefault(); pasteAt(lastObjectHit); }
   else if (e.ctrlKey && k === "a" && mode === "objects") { e.preventDefault(); selectMany(objects.map((o) => o.id)); }
   else if (k === "delete") removeSelected();
-  else if (k === "w") setMode("translate");
-  else if (k === "e") setMode("rotate");
+  else if (k === "1") setMode("translate");
+  else if (k === "2") setMode("rotate");
   else if (k === "g") $("snap").checked = !$("snap").checked;
   else if (k === "f") focusSelected();
   else if (k === "r" && placing) placing.yaw = (placing.yaw + 45) % 360;
@@ -1132,4 +1168,5 @@ window.__studio = {
   }
 };
 updateUi();
-renderer.setAnimationLoop(() => { orbit.update(); environment.follow(camera); renderer.render(scene, camera); });
+orbit.mouseButtons = { LEFT: -1, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+renderer.setAnimationLoop(() => { moveCamera(); orbit.update(); environment.follow(camera); renderer.render(scene, camera); });
