@@ -130,9 +130,26 @@ spustí skript v okne (napr. `test/paint-demo.js` namaľuje ťahy všetkými št
 výsledok kontrol – spúšťaj ho len na kópii mapy). `npm test` overí, že všetky súbory mapy sa po
 načítaní a uložení nezmenia.
 
+### Export do hry (fáza 5)
+
+Najprv v Map Studiu **Export** (minimapa + atlas), potom:
+
+```
+node mapgen/export-game.js <priečinok mapy> --index 90 --base 665600 25600 --town 128 182 --goto arena --out .._map_exports<mapa>_<dátum>
+```
+
+Pripraví do stagingu (mimo hry nič nemení):
+- `server/<mapa>/`: `Setting.txt` (BasePosition), `Town.txt` (spawn v metroch), `server_attr`
+  (sektory 64 m, bunky 0,5 m, LZO; preložené z `attr.atr` – blokované, voda, bez PvP), prázdne regen/npc/boss/stone,
+- `client/<mapa>/`: pack s mapou (+ `shadowmap.raw/.dds` plne osvetlené), sadou textúr a atlasom,
+- `manifest.json`: hashe súborov a kroky nasadenia (index, GAME_MAP_ALLOW, /goto, pack Index, atlasinfo).
+
+Kontroly: BasePosition násobok 25600, spawn nesmie byť na blokovanej bunke, `server_attr` sa dá dekódovať
+(`mapgen/lzo.js`) a sedí bunka po bunke s `attr.atr`.
+
 ## Ďalšie fázy
 
 2. ~~Štetce terénu (výška, textúry, voda, atribúty).~~ Hotové.
 3. ~~Kontrola, minimapa a atlas, MCP pre Clauda.~~ Hotové.
 4. ~~Stromy, prostredie, nová mapa so šablónami, výber viacerých objektov, prefaby.~~ Hotové.
-5. Mapa do hry: serverové súbory (`server_attr`, `Town.txt`), pack klienta, spawny (`regen.txt`).
+5. ~~Mapa do hry: serverové súbory (`server_attr`, `Town.txt`), pack klienta.~~ Export hotový; ďalej spawny (`regen.txt`), kolízie objektov na serveri (OBJECT v `server_attr`), tiene objektov.

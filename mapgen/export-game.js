@@ -1,0 +1,169 @@
+// Game export: turns a Map Studio / WorldEditor map folder into staged server and client files.
+// Nothing outside --out is written; deployment (map index, GAME_MAP_ALLOW, pack Index, atlasinfo) is a separate,
+// confirmed step that the manifest lists.
+//
+// Usage: node mapgen/export-game.js <map dir> --index <n> --base <x> <y> --out <staging dir>
+//          [--town <x> <y>]   spawn in meters from the map's north-west corner (default: map centre)
+//          [--goto <alias>]   /goto alias for settings.lua (default: none)
+//
+// Run Map Studio's Export first: it renders <map>/<terrain>/minimap.dds and <map>/_export/atlas.
+
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const { compress } = require("./lzo");
+
+const TERRAIN = 25600;                 // world units per terrain (CellScale 200 × 128 cells)
+const SECTOR = 6400, CELL = 50;        // server sectree and attribute cell
+const CELLS = SECTOR / CELL;           // 128 × 128 cells per sector
+const CLIENT_TERRAIN_FILES = ["areaambiencedata.txt", "areadata.txt", "areaproperty.txt", "attr.atr", "height.raw", "tile.raw", "water.wtr", "minimap.dds"];
+
+function readSetting(dir) {
+  const text = fs.readFileSync(path.join(dir, "Setting.txt"), "latin1");
+  const get = (key) => { const m = text.match(new RegExp(`^${key}\\s+(.+?)\\s*$`, "mi")); return m ? m[1].split(/\s+/) : null; };
+  return { text, size: get("MapSize").map(Number), textureSet: get("TextureSet")[0], environment: (get("Environment") || [null])[0] };
+}
+
+function findFile(dir, name) {
+  const hit = fs.readdirSync(dir).find((f) => f.toLowerCase() === name.toLowerCase());
+  return hit ? path.join(dir, hit) : null;
+}
+
+// Fully lit terrain shadow: 256×256 R5G5B5 0x7FFF and a white 256×256 DXT1 texture (as WorldEditor writes
+// for a terrain without shadows; object shadows are not baked yet).
+function shadowRaw() { const b = Buffer.alloc(256 * 256 * 2); for (let i = 0; i < b.length; i += 2) b.writeUInt16LE(0x7fff, i); return b; }
+function shadowDds() {
+  const h = Buffer.alloc(128);
+  h.write("DDS ", 0, "latin1");
+  // header fields as in the shipped Sands shadow maps
+  h.writeUInt32LE(124, 4); h.writeUInt32LE(0x80000, 8); h.writeUInt32LE(256, 12); h.writeUInt32LE(256, 16);
+  h.writeUInt32LE(32768, 20); h.writeUInt32LE(1, 28);
+  h.writeUInt32LE(32, 76); h.writeUInt32LE(4, 80); h.write("DXT1", 84, "latin1");
+  h.writeUInt32LE(0x1000, 108);
+  const body = Buffer.alloc(32768);
+  for (let i = 0; i < body.length; i += 8) { body.writeUInt16LE(0xffff, i); body.writeUInt16LE(0xffff, i + 2); }
+  return Buffer.concat([h, body]);
+}
+
+// server_attr: int32 width, height in sectors; per sector int32 size + LZO of 128×128 DWORD cells (0.5 m).
+// Client attr.atr pixels are 1 m, so each covers 2×2 server cells; the flag bits are the same.
+function serverAttr(dir, size) {
+  const w = size[0] * (TERRAIN / SECTOR), h = size[1] * (TERRAIN / SECTOR);
+  const attrs = new Map();
+  for (let ty = 0; ty < size[1]; ty++) for (let tx = 0; tx < size[0]; tx++) {
+    const t = path.join(dir, `${String(tx).padStart(3, "0")}${String(ty).padStart(3, "0")}`);
+    const f = findFile(t, "attr.atr");
+    if (!f) throw new Error(`missing attr.atr in ${t}`);
+    const b = fs.readFileSync(f);
+    if (b.readUInt16LE(0) !== 0x0a4a || b.readUInt16LE(2) !== 256 || b.readUInt16LE(4) !== 256) throw new Error(`unexpected attr.atr header in ${t}`);
+    attrs.set(`${tx},${ty}`, b);
+  }
+  const parts = [Buffer.from(new Int32Array([w, h]).buffer)];
+  const flags = { block: 0, water: 0, banpk: 0 };
+  for (let sy = 0; sy < h; sy++) for (let sx = 0; sx < w; sx++) {
+    const cells = Buffer.alloc(CELLS * CELLS * 4);
+    for (let cy = 0; cy < CELLS; cy++) for (let cx = 0; cx < CELLS; cx++) {
+      const mx = (sx * SECTOR + cx * CELL) / 100, my = (sy * SECTOR + cy * CELL) / 100;   // meters from the NW corner
+      const tx = Math.floor(mx / 256), ty = Math.floor(my / 256);
+      const v = attrs.get(`${tx},${ty}`)[6 + Math.floor(my - ty * 256) * 256 + Math.floor(mx - tx * 256)] & 7;
+      if (v & 1) flags.block++; if (v & 2) flags.water++; if (v & 4) flags.banpk++;
+      cells.writeUInt32LE(v, (cy * CELLS + cx) * 4);
+    }
+    const z = compress(cells);
+    const len = Buffer.alloc(4); len.writeInt32LE(z.length);
+    parts.push(len, z);
+  }
+  return { data: Buffer.concat(parts), sectors: [w, h], cells: flags };
+}
+
+function attrAt(dir, xm, ym) {
+  const tx = Math.floor(xm / 256), ty = Math.floor(ym / 256);
+  const f = findFile(path.join(dir, `${String(tx).padStart(3, "0")}${String(ty).padStart(3, "0")}`), "attr.atr");
+  return fs.readFileSync(f)[6 + Math.floor(ym - ty * 256) * 256 + Math.floor(xm - tx * 256)];
+}
+
+function exportGame(mapDir, { index, base, out, town, gotoAlias, editorRoot }) {
+  const name = path.basename(mapDir);
+  const setting = readSetting(mapDir);
+  const [sw, sh] = setting.size;
+  if (base[0] % TERRAIN || base[1] % TERRAIN) throw new Error("BasePosition must be a multiple of 25600");
+  town = town || [sw * 128, sh * 128];
+  if (attrAt(mapDir, town[0], town[1]) & 1) throw new Error(`town ${town} is on a blocked cell`);
+  if (fs.existsSync(out)) throw new Error(`${out} already exists; choose a new staging folder`);
+  const files = [];
+  const put = (rel, data) => {
+    const dest = path.join(out, rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, data);
+    files.push({ path: rel.replace(/\\/g, "/"), bytes: data.length, sha256: crypto.createHash("sha256").update(data).digest("hex") });
+  };
+
+  /* server: data/map/<name>/ (LF like the existing server maps) */
+  const srv = `server/${name}`;
+  put(`${srv}/Setting.txt`, Buffer.from(["ScriptType\tMapSetting", "", "CellScale\t200", "HeightScale\t0.500000", "", "ViewRadius\t128", "",
+    `MapSize\t${sw}\t${sh}`, `BasePosition\t${base[0]}\t${base[1]}`, `TextureSet\ttextureset\\${name}.txt`, ""].join("\n"), "latin1"));
+  put(`${srv}/Town.txt`, Buffer.from(`${Math.round(town[0])} ${Math.round(town[1])}\n`, "latin1"));
+  const attr = serverAttr(mapDir, setting.size);
+  put(`${srv}/server_attr`, attr.data);
+  for (const f of ["regen.txt", "npc.txt", "boss.txt", "stone.txt"]) put(`${srv}/${f}`, Buffer.alloc(0));
+
+  /* client pack apix_<name>: map folder (lower-case names like the shipped packs), texture set, atlas */
+  const pack = `client/${name}`;
+  const clientSetting = setting.text.replace(/^BasePosition\s+.*$/m, `BasePosition\t${base[0]}\t${base[1]}`);
+  put(`${pack}/${name}/setting.txt`, Buffer.from(clientSetting, "latin1"));
+  put(`${pack}/${name}/mapproperty.txt`, fs.readFileSync(findFile(mapDir, "MapProperty.txt")));
+  for (let ty = 0; ty < sh; ty++) for (let tx = 0; tx < sw; tx++) {
+    const key = `${String(tx).padStart(3, "0")}${String(ty).padStart(3, "0")}`, t = path.join(mapDir, key);
+    for (const f of CLIENT_TERRAIN_FILES) {
+      const src = findFile(t, f);
+      if (!src) throw new Error(`missing ${key}/${f}${f === "minimap.dds" ? " (run Export in Map Studio first)" : ""}`);
+      put(`${pack}/${name}/${key}/${f}`, fs.readFileSync(src));
+    }
+    put(`${pack}/${name}/${key}/shadowmap.raw`, shadowRaw());
+    put(`${pack}/${name}/${key}/shadowmap.dds`, shadowDds());
+  }
+  const tsName = setting.textureSet.replace(/\\/g, "/").split("/").pop();
+  if (tsName.toLowerCase() !== `${name}.txt`) throw new Error(`texture set ${setting.textureSet} must be textureset\\${name}.txt`);
+  put(`${pack}/textureset/${name}.txt`, fs.readFileSync(path.join(editorRoot, "textureset", tsName)));
+  const atlasDir = path.join(mapDir, "_export", "atlas");
+  const atlasDds = findFile(atlasDir, `${name}_atlas.dds`);
+  if (!atlasDds) throw new Error("missing _export/atlas (run Export in Map Studio first)");
+  put(`${pack}/ymir work/ui/atlas/${name}/atlas.sub`, fs.readFileSync(path.join(atlasDir, "atlas.sub")));
+  put(`${pack}/ymir work/ui/${name}_atlas.dds`, fs.readFileSync(atlasDds));
+
+  const manifest = {
+    map: name, index, basePosition: base, mapSize: setting.size, town, environment: setting.environment,
+    serverAttr: { sectors: attr.sectors, cells: attr.cells },
+    deploy: {
+      server: [
+        `copy server/${name} -> apix-server/gamefiles/data/map/${name}`,
+        `append "${index} ${name}" to apix-server/gamefiles/data/map/index`,
+        `add ${index} to GAME_MAP_ALLOW (auth and ch1) in apix-server/local-deploy/docker-compose.yml, recreate containers`,
+        ...(gotoAlias ? [`append add_goto_info("${gotoAlias}", 0, ${index}, ${Math.round(base[0] / 100 + town[0])}, ${Math.round(base[1] / 100 + town[1])}) to apix-server/gamefiles/data/settings.lua`] : [])
+      ],
+      client: [
+        `pack client/${name} -> apix-client/bin/pack/${name}/ + ${name}.zip, and dist/pack/${name}.zip`,
+        `append "${name}\\tZIP" to bin/pack/Index and dist/pack/Index`,
+        `append "${name}\\t${base[0]}\\t${base[1]}\\t${sw}\\t${sh}" to root atlasinfo.txt (bin/pack/root, root.zip in bin and dist)`
+      ]
+    },
+    files
+  };
+  put("manifest.json", Buffer.from(JSON.stringify(manifest, null, 2) + "\n"));
+  return manifest;
+}
+
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  const opt = (k, n = 1) => { const i = args.indexOf(k); return i < 0 ? null : args.slice(i + 1, i + 1 + n); };
+  const mapDir = path.resolve(args[0]);
+  const m = exportGame(mapDir, {
+    index: Number(opt("--index")[0]), base: opt("--base", 2).map(Number), out: path.resolve(opt("--out")[0]),
+    town: opt("--town", 2) ? opt("--town", 2).map(Number) : null, gotoAlias: opt("--goto") ? opt("--goto")[0] : null,
+    editorRoot: path.dirname(mapDir)
+  });
+  console.log(`staged ${m.map} (index ${m.index}, base ${m.basePosition}, ${m.files.length} files)`);
+  console.log(JSON.stringify(m.serverAttr), "town", m.town);
+}
+
+module.exports = { exportGame, serverAttr };

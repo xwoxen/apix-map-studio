@@ -479,7 +479,7 @@ function writeExport(dir, files) {
 // stay in the library for the map check but are left out of the list; their old placeholder thumbnails go.
 function modelAvailable(p) {
   if (p.available === undefined) {
-    p.available = !/.gr2$/i.test(p.model) || Boolean(resolveAsset(p.model));
+    p.available = !/\.gr2$/i.test(p.model) || Boolean(resolveAsset(p.model));
     if (!p.available) fs.rmSync(thumbFile(p.crc), { force: true });
   }
   return p.available;
