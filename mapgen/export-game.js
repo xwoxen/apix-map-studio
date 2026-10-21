@@ -3,7 +3,8 @@
 // confirmed step that the manifest lists.
 //
 // Usage: node mapgen/export-game.js <map dir> --index <n> --base <x> <y> --out <staging dir>
-//          [--town <x> <y>]   spawn in meters from the map's north-west corner (default: map centre)
+//          [--town <x> <y>]   spawn in meters from the map's north-west corner (default: the town set in Map Studio,
+//                             else the map centre)
 //          [--goto <alias>]   /goto alias for settings.lua (default: none)
 //          [--no-object-collision]  leave OBJECT (128) out of server_attr
 //
@@ -16,7 +17,7 @@ const zlib = require("zlib");
 const { compress } = require("./lzo");
 const { objectCells } = require("./collision");
 const { litLevels, shadowRaw, shadowDds } = require("./shadow");
-const { readSpawns, regenRows } = require("./spawns");
+const { readSpawns, readSpawnFile, regenRows } = require("./spawns");
 const { parseAreaData } = require("../maplib");
 
 const TERRAIN = 25600;                 // world units per terrain (CellScale 200 × 128 cells)
@@ -118,7 +119,8 @@ function exportGame(mapDir, { index, base, out, town, gotoAlias, editorRoot, obj
   const setting = readSetting(mapDir);
   const [sw, sh] = setting.size;
   if (base[0] % TERRAIN || base[1] % TERRAIN) throw new Error("BasePosition must be a multiple of 25600");
-  town = town || [sw * 128, sh * 128];
+  const studioTown = readSpawnFile(mapDir).town;
+  town = town || (studioTown ? [studioTown.x, studioTown.y] : [sw * 128, sh * 128]);
   if (attrAt(mapDir, town[0], town[1]) & 1) throw new Error(`town ${town} is on a blocked cell`);
   if (fs.existsSync(out)) throw new Error(`${out} already exists; choose a new staging folder`);
   const files = [];

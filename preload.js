@@ -23,7 +23,7 @@ contextBridge.exposeInMainWorld("studio", {
   collisionGrid: (objects, size) => ipcRenderer.invoke("collision:grid", objects, size),
   mobs: () => ipcRenderer.invoke("mobs:list"),
   spawns: (dir) => ipcRenderer.invoke("spawns:get", dir),
-  saveSpawns: (dir, spawns) => ipcRenderer.invoke("spawns:save", dir, spawns),
+  saveSpawns: (dir, spawns, town) => ipcRenderer.invoke("spawns:save", dir, spawns, town),
   thumb: (crc) => ipcRenderer.invoke("thumb:get", crc),
   saveThumb: (crc, dataUrl) => ipcRenderer.invoke("thumb:save", crc, dataUrl),
   reveal: (file) => ipcRenderer.invoke("shell:reveal", file),

@@ -7,7 +7,7 @@ const { pathToFileURL } = require("url");
 const { terrainKey, parseAreaData, saveObjects, parseTextureSet, saveTerrain } = require("./maplib");
 const { parseEnvironment } = require("./envlib");
 const { levelsFromLight, shadowRaw, shadowDds } = require("./mapgen/shadow");
-const { readSpawns, writeSpawns } = require("./mapgen/spawns");
+const { readSpawnFile, writeSpawns } = require("./mapgen/spawns");
 const { objectCells } = require("./mapgen/collision");
 
 const { APIX_ROOT, EDITOR_ROOT, PACK_ROOT, getAssetRoots, resolveAsset, getLibrary } = require("./assets");
@@ -339,8 +339,8 @@ function listMobs() {
   return mobs;
 }
 ipcMain.handle("mobs:list", () => listMobs());
-ipcMain.handle("spawns:get", (_, dir) => readSpawns(dir));
-ipcMain.handle("spawns:save", (_, dir, spawns) => {
+ipcMain.handle("spawns:get", (_, dir) => readSpawnFile(dir));
+ipcMain.handle("spawns:save", (_, dir, spawns, town) => {
   const f = path.join(dir, "_studio", "spawns.json");
   let backup = null;
   if (fs.existsSync(f)) {
@@ -348,7 +348,7 @@ ipcMain.handle("spawns:save", (_, dir, spawns) => {
     fs.mkdirSync(backup, { recursive: true });
     fs.copyFileSync(f, path.join(backup, "spawns.json"));
   }
-  return { file: writeSpawns(dir, spawns), count: spawns.length, backup };
+  return { file: writeSpawns(dir, spawns, town), count: spawns.length, backup };
 });
 
 /* ---------- asset protocol ---------- */

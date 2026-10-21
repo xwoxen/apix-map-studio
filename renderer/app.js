@@ -81,8 +81,8 @@ function restore(entry) {
     return { kind: "terrain", state: current };
   }
   if (entry.kind === "spawns") {
-    const current = { kind: "spawns", state: JSON.stringify(spawns) };
-    spawns = JSON.parse(entry.state); spawnsDirty = true;
+    const current = { kind: "spawns", state: spawnState() };
+    ({ spawns, town } = JSON.parse(entry.state)); spawnsDirty = true;
     if (!spawns.some((x) => x.id === selectedSpawn)) selectedSpawn = null;
     rebuildSpawns(); syncSpawnForm(); updateUi();
     return current;
@@ -123,7 +123,7 @@ async function openMap(dir) {
   view = new TerrainView(heights);
   terrainGroup = view.group;
   scene.add(view.group, view.water);
-  view.setAttrVisible(mode === "terrain" && brush.tool === "attr");
+  applyAttrView();
   renderPalette();
   layer.clear();
   objects = map.objects.map((o) => ({ ...o, id: nextId++ }));
@@ -161,7 +161,7 @@ async function save() {
       parts.push(`prostredie ${envName || "(žiadne)"}`); backup = r.backup; envDirty = false;
     }
     if (spawnsDirty) {
-      const r = await window.studio.saveSpawns(map.dir, spawns);
+      const r = await window.studio.saveSpawns(map.dir, spawns, town);
       parts.push(`${r.count} spawnov`); if (r.backup) backup = r.backup; spawnsDirty = false;
     }
     if (heights.isDirty) {
@@ -598,7 +598,13 @@ function stopPlacing() {
 
 /* ---------- terrain mode ---------- */
 
-let mode = "objects";             // "objects" | "terrain"
+let mode = "objects";             // "objects" | "terrain" | "spawns"
+let zonesOn = false;              // server attribute overlay outside the attribute brush (Z)
+function applyAttrView() {
+  if (view) view.setAttrVisible(zonesOn || (mode === "terrain" && brush.tool === "attr"));
+  $("zones-legend").hidden = !zonesOn;
+  $("btn-zones").setAttribute("aria-pressed", String(zonesOn));
+}
 const brush = { tool: "raise", radius: 8, strength: 5, texture: null, waterLevel: null, flattenTo: undefined, attr: { block: true, water: false, banpk: false } };
 const cursor = new BrushCursor();
 scene.add(cursor.line);
@@ -617,7 +623,7 @@ function setMainMode(m) {
   } else {
     cursor.line.visible = false;
   }
-  if (view) view.setAttrVisible(m === "terrain" && brush.tool === "attr");
+  applyAttrView();
   $("keys-objects").hidden = m !== "objects"; $("keys-terrain").hidden = m !== "terrain"; $("keys-spawns").hidden = m !== "spawns";
 }
 
@@ -630,7 +636,7 @@ function setTool(tool) {
   $("sec-water").hidden = tool !== "water";
   $("sec-attr").hidden = tool !== "attr";
   $("sec-strength").hidden = ["texture", "water", "attr"].includes(tool);
-  if (view) view.setAttrVisible(mode === "terrain" && tool === "attr");
+  applyAttrView();
 }
 
 // Paint at most once per animation frame, and only after the cursor moved a third of the radius.
@@ -729,7 +735,7 @@ $("btn-ground-all").addEventListener("click", groundAllObjects);
 
 /* ---------- spawns mode (renderer/spawns.js): monster / npc spawns saved to <map>/_studio/spawns.json ---------- */
 
-let spawns = [], spawnsDirty = false, nextSpawnId = 1, selectedSpawn = null, mobList = null;
+let spawns = [], town = null, spawnsDirty = false, nextSpawnId = 1, selectedSpawn = null, mobList = null, pickingTown = false;
 const mobByVnum = new Map();
 const spawnLayer = new SpawnLayer((x, z) => (heights ? heights.at(x, z) : 0));
 spawnLayer.root.visible = false;
@@ -739,11 +745,15 @@ function mobLabel(vnum) { const m = mobByVnum.get(vnum); return m ? `${m.name} (
 function rebuildSpawns() {
   spawnLayer.clear();
   for (const s of spawns) spawnLayer.set(s, mobLabel(s.vnum));
+  spawnLayer.setTown(town);
   spawnLayer.highlight(selectedSpawn);
+  $("sp-town").textContent = town ? `Town: x ${Math.round(town.x)}, y ${Math.round(town.y)} (zmeniť)` : "Nastaviť Town (štart hráčov)";
   renderSpawnList();
 }
 async function loadSpawns() {
-  spawns = (await window.studio.spawns(map.dir)).map((s) => ({ ...s, id: nextSpawnId++ }));
+  const data = await window.studio.spawns(map.dir);
+  spawns = data.spawns.map((s) => ({ ...s, id: nextSpawnId++ }));
+  town = data.town;
   spawnsDirty = false; selectedSpawn = null;
   rebuildSpawns(); syncSpawnForm();
 }
@@ -753,8 +763,9 @@ async function ensureMobs() {
   for (const m of mobList) mobByVnum.set(m.vnum, m);
   renderMobList(); rebuildSpawns();
 }
+function spawnState() { return JSON.stringify({ spawns, town }); }
 function changeSpawns(fn) {
-  const before = JSON.stringify(spawns);
+  const before = spawnState();
   fn();
   pushHistory(before, "spawns");
   spawnsDirty = true;
@@ -823,6 +834,7 @@ function formChanged() {
 for (const id of ["sp-vnum", "sp-count", "sp-radius", "sp-respawn"]) $(id).addEventListener("change", formChanged);
 $("sp-type").addEventListener("change", () => { renderMobList(); formChanged(); });
 $("sp-delete").addEventListener("click", deleteSpawn);
+$("sp-town").addEventListener("click", () => { pickingTown = true; selectSpawn(null); setMsg("Klikni na terén, kde sa majú hráči objaviť (Town)."); });
 $("tab-spawns").addEventListener("click", () => setMainMode("spawns"));
 
 /* ---------- pointer ---------- */
@@ -876,6 +888,12 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   if (walker.active) return;
   if (mode === "spawns" && !walker.placing) {
     const marker = pick(e, spawnLayer.pickables())[0];
+    if (pickingTown) {
+      const hit = pick(e, [terrainGroup])[0];
+      if (hit) { pickingTown = false; changeSpawns(() => { town = { x: +hit.point.x.toFixed(2), y: +hit.point.z.toFixed(2) }; }); setMsg("Town nastavený."); }
+      return;
+    }
+    if (marker && marker.object.userData.spawnId === "town") return;
     if (marker) { selectSpawn(marker.object.userData.spawnId); return; }
     if (selectedSpawn !== null) { selectSpawn(null); return; }      // the first click only drops the selection
     const hit = pick(e, [terrainGroup])[0];
@@ -1000,6 +1018,7 @@ walker.onChange = () => {
   $("btn-walk").setAttribute("aria-pressed", String(walker.active || walker.placing));
 };
 $("btn-home").addEventListener("click", () => { if (!walker.active) resetView(); });
+$("btn-zones").addEventListener("click", () => { zonesOn = !zonesOn; applyAttrView(); });
 $("btn-walk").addEventListener("click", () => { if (walker.active || walker.placing) { walker.active ? stopWalking() : walker.stop(); } else beginCharacter(); });
 $("noclip").addEventListener("change", (e) => { setNoclip(e.target.checked); e.target.blur(); });
 $("walk-class").innerHTML = Object.entries(CLASSES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
@@ -1045,6 +1064,7 @@ window.addEventListener("keydown", (e) => {
   else if (k === "g") $("snap").checked = !$("snap").checked;
   else if (k === "f") focusSelected();
   else if (k === "h") { resetView(); setMsg("Kamera späť nad mapou."); }
+  else if (k === "z" && !e.ctrlKey) { zonesOn = !zonesOn; applyAttrView(); }
   else if (k === "r" && placing) { placing.yaw = (placing.yaw + (e.shiftKey ? 15 : 45)) % 360; updateGhost(); }
   else if (k === "r" && e.shiftKey && selection.size) snapRotation();
   else if (placing && (k === "pageup" || k === "pagedown")) { e.preventDefault(); liftPlacing(k === "pageup" ? 0.5 : -0.5); }
@@ -1292,6 +1312,16 @@ async function checkMap() {
     if (waterNoAttr) add("warning", "water_without_attr", `Terén ${c.key}: ${waterNoAttr} buniek vody nemá atribút voda (hráč tam bude chodiť ako po suchu).`);
     if (attrNoWater) add("info", "attr_without_water", `Terén ${c.key}: ${attrNoWater} buniek má atribút voda bez viditeľnej vody.`);
   }
+  // town and spawns against the server attributes (1 m cells; object footprints are checked by the export)
+  const flagsAt = (x, y) => heights.attr(Math.floor(x), Math.floor(y));
+  if (!town) add("info", "town_missing", "Town (štart hráčov) nie je nastavený; export použije --town alebo stred mapy. Nastavíš ho v karte Spawny.");
+  else if (flagsAt(town.x, town.y) & 3) add("error", "town_blocked", `Town x ${Math.round(town.x)}, y ${Math.round(town.y)} stojí na blokovanej bunke alebo vo vode.`);
+  else if (!(flagsAt(town.x, town.y) & 4)) add("warning", "town_pvp", `Town x ${Math.round(town.x)}, y ${Math.round(town.y)} je v PvP zóne – hráčov tam môžu napadnúť hneď po príchode.`);
+  const onBlock = spawns.filter((s) => flagsAt(s.x, s.y) & 3), npcPvp = spawns.filter((s) => s.type === "npc" && !(flagsAt(s.x, s.y) & 7));
+  const nearTown = town ? spawns.filter((s) => s.type !== "npc" && Math.hypot(s.x - town.x, s.y - town.y) < s.radius + 10) : [];
+  if (onBlock.length) add("warning", "spawn_blocked", `${onBlock.length} spawnov má stred na blokovanej bunke alebo vo vode (server ich nespawne).`);
+  if (npcPvp.length) add("warning", "npc_pvp", `${npcPvp.length} NPC stojí v PvP zóne.`);
+  if (nearTown.length) add("warning", "spawn_near_town", `${nearTown.length} spawnov monštier je do 10 m od Townu.`);
   if (dirty || spawnsDirty || heights.isDirty) add("info", "unsaved", "Mapa má neuložené zmeny.");
   return { ok: !issues.some((i) => i.level === "error"), objects: objects.length, issues };
 }
@@ -1382,7 +1412,8 @@ const API = {
     });
     return { updated: items.length - missing.length, missing };
   },
-  list_spawns() { requireMap(); return { spawns: spawns.map((x) => ({ ...x, name: mobLabel(x.vnum) })), unsaved: spawnsDirty }; },
+  list_spawns() { requireMap(); return { town, spawns: spawns.map((x) => ({ ...x, name: mobLabel(x.vnum) })), unsaved: spawnsDirty }; },
+  set_town({ x, y }) { requireMap(); changeSpawns(() => { town = { x, y }; }); return { town }; },
   async add_spawns({ items }) {
     requireMap(); await ensureMobs();
     const added = [];

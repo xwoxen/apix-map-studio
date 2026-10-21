@@ -133,6 +133,12 @@ server.registerTool("mapstudio_update_spawns", {
   inputSchema: { items: z.array(z.object({ id: z.number().int(), x: z.number().optional(), y: z.number().optional(), ...SPAWN, vnum: z.number().int().positive().optional() })).min(1) }
 }, tool((a) => call("update_spawns", a)));
 
+server.registerTool("mapstudio_set_town", {
+  title: "Nastaviť Town",
+  description: `Town.txt mapy: kde sa hráči objavia po teleporte (uloží mapstudio_save, export ho použije bez --town). ${POS}`,
+  inputSchema: { x: z.number(), y: z.number() }
+}, tool((a) => call("set_town", a)));
+
 server.registerTool("mapstudio_delete_spawns", {
   title: "Zmazať spawny",
   description: "Zmaže spawny podľa id (dá sa vrátiť cez mapstudio_undo).",

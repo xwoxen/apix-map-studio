@@ -6,7 +6,8 @@ export const SPAWN_TYPES = {
   m: { label: "Monštrá", color: 0xe0503c },
   g: { label: "Skupina", color: 0xe09a3c },
   ga: { label: "Agresívna skupina", color: 0xb02a7a },
-  npc: { label: "NPC", color: 0x3c8ce0 }
+  npc: { label: "NPC", color: 0x3c8ce0 },
+  town: { label: "Town", color: 0xf2c230 }
 };
 
 function labelSprite(text, color) {
@@ -64,6 +65,12 @@ export class SpawnLayer {
     this.root.add(g);
     this.nodes.set(s.id, g);
     if (this.selected === s.id) this.highlight(s.id);
+  }
+  // the players' arrival point (Town.txt): a gold post
+  setTown(town) {
+    this.remove("town");
+    if (!town) return;
+    this.set({ id: "town", type: "town", vnum: 0, count: 1, radius: 2, x: town.x, y: town.y }, "Town – štart hráčov");
   }
   highlight(id) {
     this.selected = id;

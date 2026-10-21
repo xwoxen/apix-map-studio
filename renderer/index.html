@@ -22,6 +22,7 @@
   </div>
   <label class="check" title="Objekt sa po posune položí na terén (G)"><input type="checkbox" id="snap" checked> Na terén <kbd>G</kbd></label>
   <span class="sep"></span>
+  <button type="button" id="btn-zones" aria-pressed="false" title="Zóny servera: blokované, voda, bez PvP (Z)">Zóny <kbd>Z</kbd></button>
   <button type="button" id="btn-home" title="Kamera späť nad celú mapu (H)">Mapa <kbd>H</kbd></button>
   <button type="button" id="btn-walk" aria-pressed="false" title="Položiť postavu a prechádzať sa (P)">Postava <kbd>P</kbd></button>
   <span class="sep"></span>
@@ -99,6 +100,7 @@
         <div class="field"><label for="sp-respawn">Respawn s</label><input type="number" id="sp-respawn" min="1" value="120"></div>
         <p class="tool-hint" id="sp-state">Nový spawn: vyber monštrum a klikni na terén.</p>
         <button type="button" id="sp-delete" hidden>Zmazať vybraný spawn</button>
+        <button type="button" id="sp-town" title="Town.txt: kde sa hráči objavia po teleporte">Nastaviť Town (štart hráčov)</button>
       </div>
       <div class="panel-head"><input type="search" id="sp-search" placeholder="Hľadať monštrum / NPC (meno, vnum)" aria-label="Hľadať monštrá"></div>
       <ul class="lib-list plain" id="sp-mobs"><li class="muted">Načítavam monštrá…</li></ul>
@@ -116,6 +118,7 @@
     <div class="overlay walk-hud" id="walk-hud" hidden><span id="walk-text"></span>
       <label class="check" title="Prechádzať cez blokované miesta a vodu (N)"><input type="checkbox" id="noclip"> Noclip <kbd>N</kbd></label>
       <select id="walk-class" title="Trieda postavy" aria-label="Trieda postavy"></select></div>
+    <div class="overlay zones-legend" id="zones-legend" hidden><span class="dot block"></span> blokované <span class="dot water"></span> voda <span class="dot banpk"></span> bez PvP · bez farby = PvP</div>
     <div class="overlay" id="placing" hidden>Pokladáš: <b id="placing-name"></b><span id="placing-lift"></span> · klik = položiť (aj na objekt alebo do vzduchu) · Alt + koliesko / PgUp PgDn = výška · Home = na povrch · R = otočiť o 45° (Shift o 15°) · Esc = koniec</div>
   </section>
 
@@ -159,6 +162,7 @@
       <dt>F</dt><dd>zamerať vybraný</dd>
       <dt>T</dt><dd>prepnúť na terén</dd>
       <dt>H</dt><dd>kamera späť nad mapu</dd>
+      <dt>Z</dt><dd>zóny servera (PvP, bez PvP, blok)</dd>
       <dt>P</dt><dd>postava: polož a prechádzaj sa (N noclip)</dd>
       <dt>Ctrl+Z / Ctrl+Y</dt><dd>späť / znova</dd>
     </dl>

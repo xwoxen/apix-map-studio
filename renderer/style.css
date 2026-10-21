@@ -155,3 +155,4 @@ button.link { background: none; border: none; color: var(--accent); padding: 0 4
 .lib-list.plain li .folder { grid-column: 1 / -1; }
 .sp-list { flex: 0 1 auto; max-height: 30%; }
 .spawn-form .field { grid-template-columns: 84px 1fr; }
+.zones-legend { top: auto; bottom: 10px; display: flex; align-items: center; gap: 6px; font-size: 12px; }
