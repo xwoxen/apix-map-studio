@@ -1,12 +1,14 @@
 // Play mode: a warrior placed on the map and walked around with a third-person camera.
-// Blocked and water attributes stop it like the server would; noclip ignores them (and walks on water).
-// Objects are not solid: the client's collision shapes are not loaded.
+// Blocked and water attributes and object footprints (the client's .mdatr shapes, as exported to server_attr)
+// stop it like the server would; noclip ignores them (and walks on water). Space jumps.
 import * as THREE from "three";
 import { loadFbx } from "./objects.js";
 
 const RUN = 6.5, WALK = 2.2;               // meters per second
+const JUMP = 6, GRAVITY = 20;              // m/s up, m/s²
 const BLOCK = 1, WATER = 2;
-const MOVE_KEYS = new Set(["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift"]);
+const MOVE_KEYS = new Set(["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", " "]);
+export const CLASSES = { warrior: "Bojovník", assassin: "Ninja", sura: "Sura", shaman: "Šaman" };
 
 function prepareMaterials(model) {
   model.traverse((m) => {
@@ -36,7 +38,9 @@ export class Walker {
     this.held = new Set();
     this.facing = 0;
     this.view = { yaw: 0, pitch: 0.45, dist: 9 };
-    this.ready = null;
+    this.ready = null; this.cls = "warrior"; this.loadedCls = null;
+    this.objectGrid = null;                  // { w, h, cell, grid } from the main process
+    this.vy = 0; this.airborne = false;
     this.onChange = () => {};
     dom.addEventListener("pointerdown", (e) => {
       if (!this.active || e.button !== 2) return;
@@ -56,10 +60,17 @@ export class Walker {
     }, { passive: false, capture: true });
   }
 
-  load() {
-    if (this.ready) return this.ready;
+  load(cls = this.cls) {
+    if (this.ready && this.loadedCls === cls) return this.ready;
+    if (this.model) {                        // another class: drop the old character
+      this.mixer.stopAllAction();
+      this.root.remove(this.model);
+      this.model.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+      this.model = null; this.current = null;
+    }
+    this.cls = this.loadedCls = cls;
     this.ready = (async () => {
-      const parts = await window.studio.character();
+      const parts = await window.studio.character(cls);
       if (!parts.body) throw new Error("Model postavy sa nenašiel v klientovi");
       const body = await loadFbx(parts.body);
       prepareMaterials(body);
@@ -109,7 +120,15 @@ export class Walker {
   free(x, z) {
     const t = this.terrain();
     if (!t || x < 0.5 || z < 0.5 || x > t.size[0] * 256 - 0.5 || z > t.size[1] * 256 - 0.5) return false;
-    return this.noclip || !(t.attr(Math.floor(x), Math.floor(z)) & (BLOCK | WATER));
+    if (this.noclip) return true;
+    if (t.attr(Math.floor(x), Math.floor(z)) & (BLOCK | WATER)) return false;
+    return !this.onObject(x, z) || this.onObject(this.root.position.x, this.root.position.z);   // never trapped inside one
+  }
+  onObject(x, z) {
+    const g = this.objectGrid;
+    if (!g) return false;
+    const gx = Math.floor(x / g.cell), gy = Math.floor(z / g.cell);
+    return gx >= 0 && gy >= 0 && gx < g.w && gy < g.h && g.grid[gy * g.w + gx] === 1;
   }
   groundY(x, z) {
     const t = this.terrain();
@@ -163,7 +182,7 @@ export class Walker {
     if (dir.lengthSq()) {
       dir.normalize();
       const walk = has("shift"), step = (walk ? WALK : RUN) * dt;
-      const tries = [[dir.x, dir.z], [Math.sign(dir.x), 0], [0, Math.sign(dir.z)]];   // slide along walls
+      const tries = [[dir.x, dir.z], [dir.x, 0], [0, dir.z]];   // slide along walls with the matching part of the move
       let moved = false;
       for (const [dx, dz] of tries) {
         if (!dx && !dz) continue;
@@ -175,9 +194,13 @@ export class Walker {
       this.play(moved ? (walk ? "walk" : "run") : "wait");
     } else this.play("wait");
     if (blocked !== this.blocked) { this.blocked = blocked; this.onChange(); }
-    // follow the ground smoothly, turn toward the walking direction
+    // jump, then follow the ground smoothly; turn toward the walking direction
     const gy = this.groundY(p.x, p.z);
-    p.y += (gy - p.y) * Math.min(1, dt * 14);
+    if (has(" ") && !this.airborne) { this.vy = JUMP; this.airborne = true; }
+    if (this.airborne) {
+      this.vy -= GRAVITY * dt; p.y += this.vy * dt;
+      if (p.y <= gy) { p.y = gy; this.vy = 0; this.airborne = false; }
+    } else p.y += (gy - p.y) * Math.min(1, dt * 14);
     let d = this.facing - this.root.rotation.y;
     d = Math.atan2(Math.sin(d), Math.cos(d));
     this.root.rotation.y += d * Math.min(1, dt * 12);

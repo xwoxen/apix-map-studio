@@ -6,7 +6,7 @@ import { TOOLS, paint, sample, attrMask, BrushCursor } from "./brush.js";
 import { ObjectLayer, template, toScene, fromScene } from "./objects.js";
 import { thumbnail } from "./thumbs.js";
 import { Environment } from "./env.js";
-import { Walker } from "./walker.js";
+import { Walker, CLASSES } from "./walker.js";
 import { SpawnLayer, SPAWN_TYPES } from "./spawns.js";
 
 const $ = (id) => document.getElementById(id);
@@ -922,10 +922,16 @@ async function beginCharacter() {
   try { await walker.beginPlacing(); } catch (e) { walker.stop(); setMsg(String(e.message || e), true); return; }
   setMsg("Klikni na terén, kam chceš postaviť postavu.");
 }
+// object footprints for walking: recomputed from the current (maybe unsaved) objects whenever walking starts
+async function refreshObjectGrid() {
+  walker.objectGrid = await window.studio.collisionGrid(objects.map(({ crc, x, y, z, yaw }) => ({ crc, x, y, z, yaw })), map.size);
+}
 function startWalking(x, z) {
+  walker.objectGrid = null;
+  refreshObjectGrid();
   walker.start(x, z);
   fly.enabled = false; fly.clear();
-  setMsg("Chôdza: WASD, Shift pomaly, N noclip, P preložiť, Esc späť do editora.");
+  setMsg("Chôdza: WASD, Shift pomaly, medzerník skok, N noclip, P preložiť, Esc späť do editora.");
 }
 function stopWalking() {
   const target = walker.root.position.clone().add(new THREE.Vector3(0, 1.6, 0));
@@ -941,14 +947,22 @@ function setNoclip(on) {
 walker.onChange = () => {
   $("walk-hud").hidden = !(walker.active || walker.placing);
   $("walk-text").textContent = walker.placing ? "Klikni na terén, kam postavíš postavu · Esc = zrušiť"
-    : walker.blocked ? "Sem sa nedá prejsť (blokované / voda) · N = noclip" : "WASD chôdza · Shift pomaly · pravé tlačidlo kamera · koliesko priblíženie · Esc koniec";
+    : walker.blocked ? "Sem sa nedá prejsť (blokované / voda / objekt) · N = noclip" : "WASD chôdza · Shift pomaly · medzerník skok · pravé tlačidlo kamera · koliesko priblíženie · Esc koniec";
   $("walk-hud").classList.toggle("warn", walker.active && walker.blocked);
   $("noclip").checked = walker.noclip;
+  $("walk-class").value = walker.cls;
   $("btn-walk").setAttribute("aria-pressed", String(walker.active || walker.placing));
 };
 $("btn-home").addEventListener("click", () => { if (!walker.active) resetView(); });
 $("btn-walk").addEventListener("click", () => { if (walker.active || walker.placing) { walker.active ? stopWalking() : walker.stop(); } else beginCharacter(); });
 $("noclip").addEventListener("change", (e) => { setNoclip(e.target.checked); e.target.blur(); });
+$("walk-class").innerHTML = Object.entries(CLASSES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
+$("walk-class").addEventListener("change", async (e) => {
+  e.target.blur();
+  setMsg("Načítavam postavu…");
+  try { await walker.load(e.target.value); walker.root.visible = walker.active || walker.placing; setMsg(`Postava: ${CLASSES[e.target.value]}.`); }
+  catch (err) { setMsg(String(err.message || err), true); }
+});
 const moveClock = new THREE.Clock();
 
 window.addEventListener("keydown", (e) => {

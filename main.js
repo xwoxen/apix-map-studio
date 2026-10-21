@@ -8,6 +8,7 @@ const { terrainKey, parseAreaData, saveObjects, parseTextureSet, saveTerrain } =
 const { parseEnvironment } = require("./envlib");
 const { levelsFromLight, shadowRaw, shadowDds } = require("./mapgen/shadow");
 const { readSpawns, writeSpawns } = require("./mapgen/spawns");
+const { objectCells } = require("./mapgen/collision");
 
 const { APIX_ROOT, EDITOR_ROOT, PACK_ROOT, getAssetRoots, resolveAsset, getLibrary } = require("./assets");
 const GRANNY_EXPORTER = path.join(APIX_ROOT, "_codex_granny_compiled", "GrannyExporter.exe");
@@ -269,14 +270,16 @@ function modelFor(crc) {
 
 /* ---------- walking character (play mode) ---------- */
 
-// A warrior with hair and the general wait/walk/run motions, converted like map models into model-cache/pc/<part>.
-const CHARACTER = {
-  body: "d:/ymir work/pc/warrior/warrior_novice.gr2",
-  hair: "d:/ymir work/pc/warrior/hair/hair_1_1.gr2",
-  wait: "d:/ymir work/pc/warrior/general/wait.gr2",
-  walk: "d:/ymir work/pc/warrior/general/walk.gr2",
-  run: "d:/ymir work/pc/warrior/general/run.gr2"
-};
+// A novice of each class with hair and the general wait/walk/run motions, converted like map models into
+// model-cache/pc/<class>/<part>.
+const CLASSES = ["warrior", "assassin", "sura", "shaman"];
+const characterFiles = (c) => ({
+  body: `d:/ymir work/pc/${c}/${c}_novice.gr2`,
+  hair: `d:/ymir work/pc/${c}/hair/hair_1_1.gr2`,
+  wait: `d:/ymir work/pc/${c}/general/wait.gr2`,
+  walk: `d:/ymir work/pc/${c}/general/walk.gr2`,
+  run: `d:/ymir work/pc/${c}/general/run.gr2`
+});
 function convertGr2(game, out) {
   const fbx = path.join(out, "m.fbx");
   if (fs.existsSync(fbx)) return Promise.resolve(assetUrl(fbx));
@@ -292,10 +295,21 @@ function convertGr2(game, out) {
     });
   }));
 }
-async function characterParts() {
+async function characterParts(cls = "warrior") {
+  if (!CLASSES.includes(cls)) cls = "warrior";
   const parts = {};
-  for (const [k, game] of Object.entries(CHARACTER)) parts[k] = await convertGr2(game, path.join(CACHE, "pc", k));
+  for (const [k, game] of Object.entries(characterFiles(cls))) parts[k] = await convertGr2(game, path.join(CACHE, "pc", cls, k));
   return parts;
+}
+
+// walking blocks on the same object footprints the game export writes as OBJECT into server_attr (1 = blocked)
+function collisionGrid(objects, size) {
+  const w = size[0] * 512, h = size[1] * 512, grid = new Uint8Array(w * h);
+  for (const key of objectCells(objects, size[0] * 256, size[1] * 256).cells) {
+    const [x, y] = key.split(",").map(Number);
+    grid[y * w + x] = 1;
+  }
+  return { w, h, cell: 0.5, grid };
 }
 
 /* ---------- spawns: monster list from the server's mob_proto (read only) ---------- */
@@ -444,7 +458,8 @@ function modelAvailable(p) {
 }
 ipcMain.handle("library:list", () => [...getLibrary().values()].filter(modelAvailable).map(({ crc, name, type, folder, model }) => ({ crc, name, type, folder, model })));
 ipcMain.handle("model:get", (_, crc) => modelFor(crc));
-ipcMain.handle("character:get", () => characterParts());
+ipcMain.handle("character:get", (_, cls) => characterParts(cls));
+ipcMain.handle("collision:grid", (_, objects, size) => collisionGrid(objects, size));
 ipcMain.handle("thumb:get", (_, crc) => (fs.existsSync(thumbFile(crc)) ? assetUrl(thumbFile(crc)) : null));
 ipcMain.handle("thumb:save", (_, crc, dataUrl) => {
   const png = Buffer.from(String(dataUrl).replace(/^data:image\/png;base64,/, ""), "base64");
