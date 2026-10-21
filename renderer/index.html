@@ -21,6 +21,9 @@
   </div>
   <label class="check" title="Objekt sa po posune položí na terén (G)"><input type="checkbox" id="snap" checked> Na terén <kbd>G</kbd></label>
   <span class="sep"></span>
+  <button type="button" id="btn-check" title="Kontrola pred nasadením">Kontrola</button>
+  <button type="button" id="btn-export" title="Minimapa a atlas vykreslené zhora">Export</button>
+  <span class="sep"></span>
   <button type="button" id="btn-undo" title="Späť (Ctrl+Z)" disabled>Späť</button>
   <button type="button" id="btn-redo" title="Znova (Ctrl+Y)" disabled>Znova</button>
   <div class="map-name" id="map-name">Žiadna mapa</div>
@@ -120,6 +123,11 @@
     </dl>
   </aside>
 </main>
+
+<dialog class="report" id="report">
+  <div class="report-head"><h2 id="report-title"></h2><button type="button" id="report-close" aria-label="Zavrieť">✕</button></div>
+  <div id="report-body" class="report-body"></div>
+</dialog>
 
 <footer class="status">
   <span id="st-cursor">x – · y – · výška –</span>

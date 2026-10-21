@@ -303,6 +303,40 @@ ipcMain.handle("terrain:save", (_, dir, payload) => saveTerrain(dir, payload));
 ipcMain.handle("textures:list", () => listTerrainTextures());
 ipcMain.handle("texture:preview", (_, game) => texturePreview(game));
 ipcMain.handle("texture:url", (_, game) => textureUrl(game));
+ipcMain.handle("export:write", (_, dir, files) => writeExport(dir, files));
+
+// Uncompressed 32-bit BGRX DDS, the same layout WorldEditor writes for minimap.dds.
+function ddsBgrx(width, height, rgba) {
+  const head = Buffer.alloc(128);
+  head.write("DDS ", 0, "ascii");
+  head.writeUInt32LE(124, 4); head.writeUInt32LE(0x1007, 8); head.writeUInt32LE(height, 12); head.writeUInt32LE(width, 16);
+  head.writeUInt32LE(32, 76); head.writeUInt32LE(0x40, 80); head.writeUInt32LE(32, 88);
+  head.writeUInt32LE(0x00ff0000, 92); head.writeUInt32LE(0x0000ff00, 96); head.writeUInt32LE(0x000000ff, 100);
+  head.writeUInt32LE(0x1000, 108);
+  const px = Buffer.alloc(width * height * 4);
+  for (let i = 0; i < width * height; i++) { px[i * 4] = rgba[i * 4 + 2]; px[i * 4 + 1] = rgba[i * 4 + 1]; px[i * 4 + 2] = rgba[i * 4]; px[i * 4 + 3] = 0; }
+  return Buffer.concat([head, px]);
+}
+
+function writeExport(dir, files) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backup = path.join(dir, "_studio_backup", stamp);
+  const written = [];
+  let preview = null;
+  for (const f of files) {
+    const dest = path.join(dir, f.rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    if (fs.existsSync(dest) && !f.rel.startsWith("_export")) {
+      fs.mkdirSync(path.dirname(path.join(backup, f.rel)), { recursive: true });
+      fs.copyFileSync(dest, path.join(backup, f.rel));
+    }
+    if (f.kind === "dds") fs.writeFileSync(dest, ddsBgrx(f.width, f.height, f.rgba));
+    else if (f.kind === "png") { fs.writeFileSync(dest, Buffer.from(f.png.replace(/^data:image\/png;base64,/, ""), "base64")); preview = assetUrl(dest); }
+    else fs.writeFileSync(dest, f.text, "latin1");
+    written.push(f.rel);
+  }
+  return { folder: path.join(dir, "_export", "atlas"), files: written, backup: fs.existsSync(backup) ? backup : null, preview };
+}
 ipcMain.handle("library:list", () => [...getLibrary().values()].map(({ crc, name, type, folder, model }) => ({ crc, name, type, folder, model })));
 ipcMain.handle("model:get", (_, crc) => modelFor(crc));
 ipcMain.handle("thumb:get", (_, crc) => (fs.existsSync(thumbFile(crc)) ? assetUrl(thumbFile(crc)) : null));
@@ -314,6 +348,58 @@ ipcMain.handle("thumb:save", (_, crc, dataUrl) => {
 });
 ipcMain.handle("shell:reveal", (_, file) => shell.showItemInFolder(file));
 
+/* ---------- control bridge (used by the MCP server in mcp/server.js) ---------- */
+// Local HTTP on 127.0.0.1 with a per-start token; the endpoint file tells the MCP server where to connect.
+const http = require("http");
+const ENDPOINT_FILE = path.join(app.getPath("userData"), "control-endpoint.json");
+const SHOTS = path.join(app.getPath("userData"), "screenshots");
+
+async function callRenderer(method, params) {
+  const js = `window.__studio && window.__studio.api ? window.__studio.api(${JSON.stringify(method)}, ${JSON.stringify(params || {})}) : Promise.reject(new Error("Studio is still starting"))`;
+  return win.webContents.executeJavaScript(js, true);
+}
+
+async function bridgeCall(method, params) {
+  if (method === "screenshot") {
+    const r = await callRenderer("screenshot", params);                     // renderer prepares the view and returns a PNG
+    fs.mkdirSync(SHOTS, { recursive: true });
+    const file = path.join(SHOTS, `shot-${Date.now()}.png`);
+    fs.writeFileSync(file, Buffer.from(r.png.replace(/^data:image\/png;base64,/, ""), "base64"));
+    return { file, width: r.width, height: r.height };
+  }
+  if (method === "window_screenshot") {
+    fs.mkdirSync(SHOTS, { recursive: true });
+    const file = path.join(SHOTS, `window-${Date.now()}.png`);
+    fs.writeFileSync(file, (await win.webContents.capturePage()).toPNG());
+    return { file };
+  }
+  return callRenderer(method, params);
+}
+
+function startBridge() {
+  const token = require("crypto").randomBytes(24).toString("hex");
+  const server = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > 20e6) req.destroy(); });
+    req.on("end", async () => {
+      res.setHeader("Content-Type", "application/json");
+      try {
+        const msg = JSON.parse(body || "{}");
+        if (msg.token !== token) { res.statusCode = 403; return res.end(JSON.stringify({ ok: false, error: "bad token" })); }
+        const result = await bridgeCall(String(msg.method), msg.params || {});
+        res.end(JSON.stringify({ ok: true, result }));
+      } catch (e) {
+        res.end(JSON.stringify({ ok: false, error: String(e && e.message || e) }));
+      }
+    });
+  });
+  server.listen(0, "127.0.0.1", () => {
+    fs.mkdirSync(path.dirname(ENDPOINT_FILE), { recursive: true });
+    fs.writeFileSync(ENDPOINT_FILE, JSON.stringify({ host: "127.0.0.1", port: server.address().port, token, pid: process.pid }, null, 2));
+  });
+  app.on("will-quit", () => { try { fs.unlinkSync(ENDPOINT_FILE); } catch { /* already gone */ } });
+}
+
 function argValue(flag) { const i = process.argv.indexOf(flag); return i >= 0 ? process.argv[i + 1] : null; }
 
 app.whenReady().then(() => {
@@ -323,6 +409,7 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString());
   });
   createWindow();
+  if (!process.argv.includes("--screenshot")) startBridge();
   // Dev/test flags: --open <map dir> loads a map on start, --screenshot <png> saves the view and quits.
   const open = argValue("--open"), shot = argValue("--screenshot");
   win.webContents.on("did-finish-load", () => {

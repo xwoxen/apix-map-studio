@@ -119,6 +119,21 @@ input[type=search], .inspector input[type=number] {
 .cat-head { display: flex; justify-content: space-between; align-items: center; }
 .cat-head button { padding: 2px 8px; }
 
+.report { background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 0; width: min(640px, 90vw); max-height: 80vh; }
+.report::backdrop { background: rgba(0, 0, 0, .5); }
+.report-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.report-head h2 { font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--fg); }
+.report-head button { padding: 2px 8px; }
+.report-body { padding: 12px 14px; overflow: auto; max-height: calc(80vh - 50px); }
+.report-body p { margin: 0 0 8px; }
+.issues { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.issues li { padding: 6px 10px; border-radius: 5px; background: var(--panel-2); border-left: 3px solid var(--muted); }
+.issues li.error { border-left-color: var(--danger); }
+.issues li.warning { border-left-color: var(--accent); }
+.issues b { margin-right: 6px; }
+button.link { background: none; border: none; color: var(--accent); padding: 0 4px; text-decoration: underline; }
+.report-img { max-width: 100%; border-radius: 6px; margin-top: 6px; image-rendering: pixelated; }
+
 .status { display: flex; gap: 18px; padding: 5px 12px; background: var(--panel); border-top: 1px solid var(--line); color: var(--muted); font-family: var(--mono); font-size: 12px; }
 .status .msg { margin-left: auto; color: var(--fg); font-family: var(--font); }
 .status .msg.warn { color: var(--danger); }

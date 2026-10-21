@@ -49,6 +49,29 @@ Prvé spustenie po inštalácii: `npm install` (Electron musí mať povolený in
   v `AreaProperty.txt`, `attr.atr`, sada textúr) a zálohuje ich. Nepoužité výšky vody sa vynechajú.
 - Späť / Znova funguje spoločne pre objekty aj terén (jeden ťah štetcom = jeden krok).
 
+### Kontrola a export (fáza 3, tlačidlá v hornej lište)
+
+- **Kontrola** pred nasadením: objekty mimo mapy, CRC mimo knižnice klienta, chýbajúce modely,
+  objekty vo vzduchu / pod terénom / vo vode, chýbajúce textúry terénu, viac ako 12 textúr na terén,
+  voda bez atribútu voda a naopak, neuložené zmeny. Pri položke „ukázať“ priblíži objekt.
+- **Export** vykreslí mapu zhora (s objektmi):
+  - `minimap.dds` do každého terénu (256×256, nekomprimovaný BGRX ako z WorldEditora; starý sa zálohuje),
+  - atlas do `<mapa>\_export\atlas\` (`atlas.sub` + `<mapa>_atlas.dds` + `preview.png`);
+    do klienta patrí do `d:/ymir work/ui/atlas/<mapa>/`.
+
+### MCP pre Clauda
+
+`mcp/server.mjs` je MCP server zaregistrovaný v `APIX\.mcp.json` ako `mapstudio`. Aplikácia pri štarte
+otvorí lokálny ovládací kanál (127.0.0.1, náhodný port a token v
+`%APPDATA%\APIX Map Studio\control-endpoint.json`) a MCP server cez neho volá tie isté funkcie ako UI,
+takže funguje Späť aj označenie neuložených zmien.
+
+Nástroje: `mapstudio_launch`, `_status`, `_open_map`, `_list_objects`, `_search_library`,
+`_add_objects`, `_update_objects`, `_delete_objects`, `_terrain_height`, `_paint`, `_add_texture`,
+`_ground_all_objects`, `_undo`, `_redo`, `_save`, `_screenshot` (3D pohľad do PNG, voliteľne s kamerou),
+`_window_screenshot`, `_check_map`, `_export`. Pozície sú v metroch od severozápadného rohu mapy
+(x na východ, y na juh, z výška).
+
 ## Súradnice
 
 Scéna je v metroch, os Y hore: `scéna = (x/100, z/100, −y/100)` z Metin2 cm (y v AreaData je záporné).
@@ -68,5 +91,5 @@ načítaní a uložení nezmenia.
 ## Ďalšie fázy
 
 2. ~~Štetce terénu (výška, textúry, voda, atribúty).~~ Hotové.
-3. Export: minimapa a atlas z vlastného vykresľovania, serverové súbory.
-4. MCP do aplikácie (úpravy s Claudom naživo), šablóny dungeonov, spawny, skutočné stromy.
+3. ~~Kontrola, minimapa a atlas, MCP pre Clauda.~~ Hotové.
+4. Serverové súbory (`server_attr`, spawny `regen.txt`), šablóny dungeonov, skutočné stromy (SpeedTree).

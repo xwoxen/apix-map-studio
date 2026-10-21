@@ -542,8 +542,275 @@ setMode("translate");
 setTool("raise");
 setMainMode("objects");
 
-// Hook for scripted tests (main --eval): paint strokes and save without a mouse.
+/* ---------- control API (MCP bridge and scripted tests) ----------
+   Positions are meters from the map's north-west corner: x east, y south, z height. Yaw in degrees. */
+
+function describe(o) {
+  const p = toScene(o), info = libByCrc.get(o.crc);
+  return { id: o.id, crc: o.crc, name: info ? info.name : null, type: info ? info.type : null,
+    x: +p.x.toFixed(2), y: +p.z.toFixed(2), z: +p.y.toFixed(2), yaw: +o.yaw.toFixed(1), ground: +heights.at(p.x, p.z).toFixed(2) };
+}
+function findCrc(item) {
+  if (item.crc !== undefined) return Number(item.crc) >>> 0;
+  const q = String(item.name || "").toLowerCase();
+  const hit = library.find((p) => p.name.toLowerCase() === q) || library.find((p) => p.name.toLowerCase().includes(q));
+  if (!hit) throw new Error(`Objekt "${item.name}" nie je v knižnici`);
+  return hit.crc;
+}
+function requireMap() { if (!map) throw new Error("Nie je otvorená žiadna mapa"); }
+function waitModels(timeoutMs = 60000) {
+  return new Promise((resolve) => { const t0 = Date.now(); const tick = () => (!layer.pending || Date.now() - t0 > timeoutMs ? resolve() : setTimeout(tick, 150)); tick(); });
+}
+function frames(n = 2) { return new Promise((r) => { const step = () => (--n <= 0 ? r() : requestAnimationFrame(step)); requestAnimationFrame(step); }); }
+
+function setCamera({ x, y, distance = 80, yaw = 0, pitch = 50 }) {
+  const tx = x ?? orbit.target.x, tz = y ?? orbit.target.z, ty = heights.at(tx, tz);
+  const p = rad(pitch), a = rad(yaw);
+  orbit.target.set(tx, ty, tz);
+  camera.position.set(tx - Math.sin(a) * Math.cos(p) * distance, ty + Math.sin(p) * distance, tz + Math.cos(a) * Math.cos(p) * distance);
+  orbit.update();
+}
+
+/* ---------- phase 3: top-down rendering, export, map check ---------- */
+
+// Renders a north-up orthographic view of [x0, z0]..[x0+w, z0+h] meters; returns RGBA rows top (north) first.
+function renderTopDown(x0, z0, w, h, px, py) {
+  const cam = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 1, 10000);
+  cam.position.set(x0 + w / 2, 3000, z0 + h / 2);
+  cam.up.set(0, 0, -1);
+  cam.lookAt(x0 + w / 2, 0, z0 + h / 2);
+  const target = new THREE.WebGLRenderTarget(px, py, { colorSpace: THREE.SRGBColorSpace });
+  const hidden = [cursor.line, selBox, gizmo.getHelper ? gizmo.getHelper() : gizmo].filter((o) => o.visible);
+  hidden.forEach((o) => { o.visible = false; });
+  const fog = scene.fog; scene.fog = null;
+  renderer.setRenderTarget(target);
+  renderer.render(scene, cam);
+  const raw = new Uint8Array(px * py * 4);
+  renderer.readRenderTargetPixels(target, 0, 0, px, py, raw);
+  renderer.setRenderTarget(null);
+  scene.fog = fog; hidden.forEach((o) => { o.visible = true; });
+  target.dispose();
+  const out = new Uint8Array(px * py * 4);
+  for (let r = 0; r < py; r++) out.set(raw.subarray((py - 1 - r) * px * 4, (py - r) * px * 4), r * px * 4);
+  return out;
+}
+
+function rgbaToPng(rgba, w, h) {
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(rgba), w, h), 0, 0);
+  return c.toDataURL("image/png");
+}
+
+async function exportMaps() {
+  requireMap();
+  await waitModels();
+  const files = [];
+  for (const c of heights.chunks.values()) {
+    files.push({ rel: `${c.key}/minimap.dds`, kind: "dds", width: 256, height: 256, rgba: renderTopDown(c.tx * 256, c.ty * 256, 256, 256, 256, 256) });
+  }
+  const per = Math.max(64, Math.floor(1024 / Math.max(map.size[0], map.size[1])) & ~3);
+  const aw = per * map.size[0], ah = per * map.size[1];
+  const atlas = renderTopDown(0, 0, map.size[0] * 256, map.size[1] * 256, aw, ah);
+  const ddsName = `${map.name}_atlas.dds`;
+  files.push({ rel: `_export/atlas/${ddsName}`, kind: "dds", width: aw, height: ah, rgba: atlas });
+  files.push({ rel: "_export/atlas/atlas.sub", kind: "text", text: `title subImage\r\nversion 1.0\r\nimage "${ddsName}"\r\nleft 0\r\ntop 0\r\nright ${aw}\r\nbottom ${ah}\r\n` });
+  files.push({ rel: "_export/atlas/preview.png", kind: "png", png: rgbaToPng(atlas, aw, ah) });
+  const r = await window.studio.exportWrite(map.dir, files);
+  return { minimaps: heights.chunks.size, atlas: `${aw}x${ah}`, folder: r.folder, files: r.files, backup: r.backup, preview: r.preview };
+}
+
+async function checkMap() {
+  requireMap();
+  const issues = [];
+  const add = (level, kind, message, ids) => issues.push({ level, kind, message, ...(ids && ids.length ? { ids: ids.slice(0, 50) } : {}) });
+  const W = map.size[0] * 256, D = map.size[1] * 256;
+
+  const outside = objects.filter((o) => { const p = toScene(o); return p.x < 0 || p.z < 0 || p.x >= W || p.z >= D; });
+  if (outside.length) add("error", "outside", `${outside.length} objektov je mimo mapy (neuložia sa do žiadneho terénu správne).`, outside.map((o) => o.id));
+
+  const crcs = [...new Set(objects.map((o) => o.crc))];
+  const unknown = crcs.filter((c) => !libByCrc.has(c));
+  if (unknown.length) add("error", "unknown_crc", `${unknown.length} CRC nie je v knižnici property klienta: ${unknown.slice(0, 10).join(", ")}. Hra tieto objekty nezobrazí.`, objects.filter((o) => unknown.includes(o.crc)).map((o) => o.id));
+  const infos = await Promise.all(crcs.filter((c) => libByCrc.has(c)).map(async (c) => [c, (await template(c)).info]));
+  const missing = infos.filter(([, i]) => i.kind === "missing" || i.kind === "error");
+  if (missing.length) add("warning", "missing_model", `${missing.length} objektov nemá dostupný model: ${missing.slice(0, 5).map(([, i]) => i.model || i.name).join(", ")}.`, objects.filter((o) => missing.some(([c]) => c === o.crc)).map((o) => o.id));
+
+  const trees = new Set(infos.filter(([, i]) => i.kind === "tree").map(([c]) => c));
+  const floating = [], buried = [], wet = [];
+  for (const o of objects) {
+    const p = toScene(o), g = heights.at(p.x, p.z), d = p.y - g;
+    if (d > 1.5) floating.push(o.id);
+    if (d < -1.5 && !trees.has(o.crc)) buried.push(o.id);
+    const w = heights.waterLevel(Math.floor(p.x / 2), Math.floor(p.z / 2));
+    if (w !== null && w / 200 > g + 0.5) wet.push(o.id);
+  }
+  if (floating.length) add("warning", "floating", `${floating.length} objektov visí viac ako 1,5 m nad terénom.`, floating);
+  if (buried.length) add("warning", "buried", `${buried.length} objektov je viac ako 1,5 m pod terénom.`, buried);
+  if (wet.length) add("warning", "in_water", `${wet.length} objektov stojí vo vode.`, wet);
+
+  const badTex = heights.textures.filter((t) => !t.url);
+  if (badTex.length) add("error", "texture_missing", `Textúry terénu sa nenašli v klientovi: ${badTex.map((t) => t.file).join(", ")}.`);
+  for (const c of heights.chunks.values()) {
+    const used = new Set(c.tile);
+    if (used.size > 12) add("warning", "many_textures", `Terén ${c.key} používa ${used.size} textúr; Map Studio zobrazí len 12 najčastejších.`);
+    let waterNoAttr = 0, attrNoWater = 0;
+    for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
+      const isWet = c.water.idx[y * 128 + x] !== 255;
+      const a = c.attr[(y * 2) * 256 + x * 2] & 2;
+      if (isWet && !a) waterNoAttr++;
+      if (!isWet && a) attrNoWater++;
+    }
+    if (waterNoAttr) add("warning", "water_without_attr", `Terén ${c.key}: ${waterNoAttr} buniek vody nemá atribút voda (hráč tam bude chodiť ako po suchu).`);
+    if (attrNoWater) add("info", "attr_without_water", `Terén ${c.key}: ${attrNoWater} buniek má atribút voda bez viditeľnej vody.`);
+  }
+  if (dirty || heights.isDirty) add("info", "unsaved", "Mapa má neuložené zmeny.");
+  return { ok: !issues.some((i) => i.level === "error"), objects: objects.length, issues };
+}
+
+function showReport(title, html) {
+  $("report-title").textContent = title;
+  $("report-body").innerHTML = html;
+  $("report").showModal();
+}
+$("report-close").addEventListener("click", () => $("report").close());
+$("btn-check").addEventListener("click", async () => {
+  if (!map) return;
+  setMsg("Kontrolujem mapu…");
+  const r = await checkMap();
+  const label = { error: "Chyba", warning: "Upozornenie", info: "Info" };
+  showReport(r.ok ? "Kontrola: bez chýb" : "Kontrola: treba opraviť",
+    r.issues.length ? `<ul class="issues">${r.issues.map((i) => `<li class="${i.level}"><b>${label[i.level]}</b> ${escapeHtml(i.message)}${i.ids ? ` <button type="button" class="link" data-ids="${i.ids.join(",")}">ukázať</button>` : ""}</li>`).join("")}</ul>` : "<p>Nenašiel som žiadny problém.</p>");
+  setMsg(`Kontrola: ${r.issues.filter((i) => i.level === "error").length} chýb, ${r.issues.filter((i) => i.level === "warning").length} upozornení.`);
+});
+$("report-body").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-ids]");
+  if (!b) return;
+  $("report").close();
+  setMainMode("objects");
+  select(Number(b.dataset.ids.split(",")[0]));
+  focusSelected();
+});
+$("btn-export").addEventListener("click", async () => {
+  if (!map) return;
+  setMsg("Exportujem minimapu a atlas…");
+  try {
+    const r = await exportMaps();
+    showReport("Export hotový", `<p>Minimapy: ${r.minimaps} × <code>minimap.dds</code> v priečinkoch terénov.</p>
+      <p>Atlas ${r.atlas}: <code>${escapeHtml(r.folder)}</code> (atlas.sub, ${escapeHtml(map.name)}_atlas.dds). Do hry patrí do <code>d:/ymir work/ui/atlas/${escapeHtml(map.name)}/</code>.</p>
+      <img class="report-img" src="${r.preview}" alt="Náhľad atlasu">`);
+    setMsg("Export hotový.");
+  } catch (e) { setMsg("Export zlyhal: " + e.message, true); }
+});
+
+const API = {
+  status() {
+    return map ? {
+      map: map.name, dir: map.dir, size: map.size, sizeMeters: [map.size[0] * 256, map.size[1] * 256],
+      objects: objects.length, unsaved: { objects: dirty, terrain: heights.isDirty }, mode, tool: brush.tool,
+      textures: heights.textures.map((t) => ({ index: t.index, file: t.file, found: Boolean(t.url) })), modelsLoading: layer.pending
+    } : { map: null };
+  },
+  async open_map({ dir }) { await openMap(dir); requireMap(); return API.status(); },
+  list_objects({ x, y, radius, crc, name, limit = 200 } = {}) {
+    requireMap();
+    let list = objects.map(describe);
+    if (x !== undefined && y !== undefined && radius) list = list.filter((o) => Math.hypot(o.x - x, o.y - y) <= radius);
+    if (crc !== undefined) list = list.filter((o) => o.crc === (Number(crc) >>> 0));
+    if (name) list = list.filter((o) => (o.name || "").toLowerCase().includes(String(name).toLowerCase()));
+    return { total: list.length, objects: list.slice(0, limit) };
+  },
+  search_library({ query = "", type, limit = 30 } = {}) {
+    const q = query.toLowerCase();
+    const rows = library.filter((p) => (!type || p.type === type) && (!q || p.name.toLowerCase().includes(q) || p.folder.toLowerCase().includes(q)));
+    return { total: rows.length, items: rows.slice(0, limit).map(({ crc, name, type: t, folder }) => ({ crc, name, type: t, folder })) };
+  },
+  add_objects({ items }) {
+    requireMap();
+    const added = [];
+    change(() => {
+      for (const it of items) {
+        const crc = findCrc(it);
+        const zM = it.z !== undefined ? it.z : heights.at(it.x, it.y);
+        const o = { id: nextId++, crc, ...fromScene(new THREE.Vector3(it.x, zM, it.y)), yaw: ((it.yaw || 0) % 360 + 360) % 360, pitch: 0, roll: 0, bias: 0 };
+        objects.push(o); added.push(o);
+      }
+    });
+    return { added: added.map(describe) };
+  },
+  update_objects({ items }) {
+    requireMap();
+    const missing = items.filter((it) => !objects.some((o) => o.id === it.id)).map((it) => it.id);
+    change(() => {
+      for (const it of items) {
+        const o = objects.find((x) => x.id === it.id);
+        if (!o) continue;
+        const p = toScene(o);
+        const nx = it.x ?? p.x, ny = it.y ?? p.z;
+        const nz = it.ground ? heights.at(nx, ny) : (it.z ?? (it.x !== undefined || it.y !== undefined ? heights.at(nx, ny) : p.y));
+        Object.assign(o, fromScene(new THREE.Vector3(nx, nz, ny)));
+        if (it.yaw !== undefined) o.yaw = ((it.yaw % 360) + 360) % 360;
+      }
+    });
+    return { updated: items.length - missing.length, missing };
+  },
+  delete_objects({ ids }) {
+    requireMap();
+    const set = new Set(ids);
+    const before = objects.length;
+    change(() => { objects = objects.filter((o) => !set.has(o.id)); if (selected && set.has(selected.id)) selected = null; });
+    return { deleted: before - objects.length };
+  },
+  terrain_height({ points }) {
+    requireMap();
+    return { heights: points.map(([x, y]) => ({ x, y, z: +heights.at(x, y).toFixed(2), water: (() => { const w = heights.waterLevel(Math.floor(x / 2), Math.floor(y / 2)); return w === null ? null : +(w / 200).toFixed(2); })(), attr: heights.attr(Math.floor(x), Math.floor(y)) })) };
+  },
+  async add_texture({ game }) { requireMap(); const e = heights.addTexture(game, await window.studio.textureUrl(game)); renderPalette(); updateUi(); return { index: e.index, file: e.file, found: Boolean(e.url) }; },
+  async paint({ tool, points, radius = 8, strength = 5, texture, waterLevel, flattenTo, attr, invert = false }) {
+    requireMap();
+    if (!TOOLS[tool]) throw new Error(`Neznámy nástroj ${tool}; použi ${Object.keys(TOOLS).join(", ")}`);
+    const opts = { ...brush, tool, radius, strength, invert };
+    if (tool === "texture") {
+      if (texture === undefined) throw new Error("texture: index z mapy alebo herná cesta d:/ymir work/terrainmaps/...");
+      opts.texture = typeof texture === "number" ? texture : (await API.add_texture({ game: texture })).index;
+    }
+    if (tool === "water") opts.waterLevel = waterLevel !== undefined ? Math.round(waterLevel * 200) : Math.round(heights.at(points[0][0], points[0][1]) * 200) + 200;
+    if (tool === "flatten") opts.flattenTo = flattenTo !== undefined ? Math.round(flattenTo * 200) : heights.raw(Math.round(points[0][0] / 2), Math.round(points[0][1] / 2));
+    if (tool === "attr") opts.attrFlags = attrMask({ block: false, water: false, banpk: false, ...(attr || brush.attr) });
+    heights.beginStroke();
+    const keys = new Set(), parts = new Set();
+    for (const [x, y] of points) { const c = paint(heights, x, y, opts); c.keys.forEach((k) => keys.add(k)); c.parts.forEach((p) => parts.add(p)); }
+    view.refresh(keys, parts);
+    const snap = heights.endStroke();
+    if (snap) pushHistory(snap, "terrain");
+    updateUi();
+    return { changed: [...parts] };
+  },
+  ground_all_objects() { requireMap(); groundAllObjects(); return { objects: objects.length }; },
+  check_map: () => checkMap(),
+  export: () => exportMaps(),
+  async save() { requireMap(); await save(); return { message: $("st-msg").textContent, unsaved: { objects: dirty, terrain: heights.isDirty } }; },
+  undo() { undo(); return { undo: undoStack.length, redo: redoStack.length }; },
+  redo() { redo(); return { undo: undoStack.length, redo: redoStack.length }; },
+  camera(params) { requireMap(); setCamera(params || {}); return { target: orbit.target.toArray().map((v) => +v.toFixed(2)) }; },
+  async screenshot({ x, y, distance, yaw, pitch, attr } = {}) {
+    requireMap();
+    if (x !== undefined || distance !== undefined) setCamera({ x, y, distance, yaw, pitch });
+    const prevAttr = view.showAttr;
+    if (attr !== undefined) view.setAttrVisible(Boolean(attr));
+    await waitModels(); await frames(3);
+    renderer.render(scene, camera);
+    const png = renderer.domElement.toDataURL("image/png");
+    if (attr !== undefined) view.setAttrVisible(prevAttr);
+    return { png, width: renderer.domElement.width, height: renderer.domElement.height };
+  }
+};
+
 window.__studio = {
+  api: async (method, params) => {
+    const fn = API[method];
+    if (!fn) throw new Error(`Neznáma metóda ${method}; dostupné: ${Object.keys(API).join(", ")}`);
+    return fn(params || {});
+  },
   setMainMode, setTool, save, undo, redo,
   brush, get model() { return heights; }, get objects() { return objects; },
   async addTexture(game) { const e = heights.addTexture(game, await window.studio.textureUrl(game)); brush.texture = e.index; renderPalette(); return e.index; },

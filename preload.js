@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("studio", {
   terrainTextures: () => ipcRenderer.invoke("textures:list"),
   texturePreview: (game) => ipcRenderer.invoke("texture:preview", game),
   textureUrl: (game) => ipcRenderer.invoke("texture:url", game),
+  exportWrite: (dir, files) => ipcRenderer.invoke("export:write", dir, files),
   library: () => ipcRenderer.invoke("library:list"),
   model: (crc) => ipcRenderer.invoke("model:get", crc),
   thumb: (crc) => ipcRenderer.invoke("thumb:get", crc),
