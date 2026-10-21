@@ -1,0 +1,3 @@
+# Keep LF everywhere: renderer/index.html carries a CSP hash of its inline import map.
+* text=auto eol=lf
+*.cmd text eol=crlf
