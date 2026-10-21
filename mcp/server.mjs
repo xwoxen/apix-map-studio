@@ -77,8 +77,8 @@ server.registerTool("mapstudio_open_map", {
 
 server.registerTool("mapstudio_new_map", {
   title: "Nová mapa",
-  description: "Vytvorí v koreni WorldEditora novú rovnú mapu (výška 163,8 m = 32767, jedna základná textúra, bez vody) a otvorí ju. sizeX/sizeY v terénoch po 256 m.",
-  inputSchema: { name: z.string(), sizeX: z.number().int().min(1).max(16).optional(), sizeY: z.number().int().min(1).max(16).optional(), baseTexture: z.string().optional() }
+  description: "Vytvorí v koreni WorldEditora novú mapu a otvorí ju. template: empty (rovina 163,8 m s baseTexture, bez vody), island (ukážkový ostrov 1×1), dungeon (miestnosti a chodby vytesané do skaly, seed voliteľný). sizeX/sizeY v terénoch po 256 m.",
+  inputSchema: { name: z.string(), sizeX: z.number().int().min(1).max(16).optional(), sizeY: z.number().int().min(1).max(16).optional(), baseTexture: z.string().optional(), template: z.enum(["empty", "island", "dungeon"]).optional(), seed: z.string().optional() }
 }, tool((a) => call("new_map", a)));
 
 server.registerTool("mapstudio_list_objects", {
@@ -137,6 +137,36 @@ server.registerTool("mapstudio_add_texture", {
   description: "Pridá textúru (d:/ymir work/terrainmaps/...) do sady textúr mapy a vráti jej číslo.",
   inputSchema: { game: z.string() }
 }, tool((a) => call("add_texture", a)));
+
+server.registerTool("mapstudio_list_prefabs", {
+  title: "Zoznam prefabov",
+  description: "Uložené skupiny objektov (prefaby) s počtom objektov.",
+  inputSchema: {}
+}, tool(() => call("list_prefabs")));
+
+server.registerTool("mapstudio_save_prefab", {
+  title: "Uložiť prefab",
+  description: "Uloží objekty podľa id ako prefab (relatívne rozloženie, výška nad terénom).",
+  inputSchema: { name: z.string(), ids: z.array(z.number().int()).min(1) }
+}, tool((a) => call("save_prefab", a)));
+
+server.registerTool("mapstudio_place_prefab", {
+  title: "Položiť prefab",
+  description: `Položí prefab so stredom v bode x, y a otočením yaw; každý objekt sedne na terén. ${POS}`,
+  inputSchema: { name: z.string(), x: z.number(), y: z.number(), yaw: z.number().optional() }
+}, tool((a) => call("place_prefab", a)));
+
+server.registerTool("mapstudio_list_environments", {
+  title: "Zoznam prostredí",
+  description: "Prostredia (.msenv z d:/ymir work/environment) – obloha, svetlo, hmla. Filter podľa časti názvu.",
+  inputSchema: { query: z.string().optional() }
+}, tool((a) => call("list_environments", a)));
+
+server.registerTool("mapstudio_set_environment", {
+  title: "Nastaviť prostredie mapy",
+  description: "Nastaví prostredie mapy (napr. a1.msenv), hneď ho zobrazí a pri uložení zapíše do Setting.txt. Prázdny názov = žiadne.",
+  inputSchema: { name: z.string() }
+}, tool((a) => call("set_environment", a)));
 
 server.registerTool("mapstudio_ground_all_objects", {
   title: "Položiť objekty na terén",

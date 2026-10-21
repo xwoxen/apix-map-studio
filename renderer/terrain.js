@@ -202,17 +202,21 @@ fallback.needsUpdate = true;
 const ddsLoader = new DDSLoader();
 
 const vertexShader = `
+  #include <fog_pars_vertex>
   varying vec3 vWorld; varying vec3 vNormal; varying vec2 vUv;
   void main() {
     vUv = uv; vNormal = normalize(normal);
     vec4 w = modelMatrix * vec4(position, 1.0); vWorld = w.xyz;
-    gl_Position = projectionMatrix * viewMatrix * w;
+    vec4 mvPosition = viewMatrix * w;
+    gl_Position = projectionMatrix * mvPosition;
+    #include <fog_vertex>
   }`;
 const fragmentShader = `
   uniform sampler2D tex[${MAX_SLOTS}]; uniform float scale[${MAX_SLOTS}];
   uniform sampler2D maskA; uniform sampler2D maskB; uniform sampler2D maskC; uniform sampler2D attrTex;
-  uniform float showAttr; uniform vec3 sunDir;
+  uniform float showAttr; uniform vec3 sunDir; uniform vec3 sunColor; uniform vec3 ambColor;
   varying vec3 vWorld; varying vec3 vNormal; varying vec2 vUv;
+  #include <fog_pars_fragment>
   void main() {
     vec4 a = texture2D(maskA, vUv), b = texture2D(maskB, vUv), c = texture2D(maskC, vUv);
     float w[${MAX_SLOTS}];
@@ -220,10 +224,11 @@ const fragmentShader = `
     vec3 col = vec3(0.0); float sum = 0.0;
     ${Array.from({ length: MAX_SLOTS }, (_, i) => `if (w[${i}] > 0.001) { col += texture2D(tex[${i}], vWorld.xz / scale[${i}]).rgb * w[${i}]; sum += w[${i}]; }`).join("\n    ")}
     col = sum > 0.0 ? col / sum : vec3(0.42, 0.47, 0.35);
-    float light = 0.45 + 0.65 * max(dot(normalize(vNormal), normalize(sunDir)), 0.0);
+    vec3 light = ambColor + sunColor * max(dot(normalize(vNormal), normalize(sunDir)), 0.0);
     col *= light;
     if (showAttr > 0.5) { vec4 at = texture2D(attrTex, vUv); col = mix(col, at.rgb, at.a * 0.55); }
     gl_FragColor = vec4(col, 1.0);
+    #include <fog_fragment>
   }`;
 
 function dataTex(data, size) {
@@ -240,6 +245,9 @@ export class TerrainView {
     this.meshes = new Map();
     this.texCache = new Map();
     this.showAttr = false;
+    this.lightDir = new THREE.Vector3(0.4, 1.0, 0.3);
+    this.sunColor = new THREE.Color(0.65, 0.65, 0.65);
+    this.ambColor = new THREE.Color(0.45, 0.45, 0.45);
     for (const c of model.chunks.values()) this.buildChunk(c);
     this.water = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshPhongMaterial({ color: 0x3f7f98, transparent: true, opacity: 0.62, depthWrite: false, shininess: 80 }));
     this.water.name = "water";
@@ -269,11 +277,13 @@ export class TerrainView {
     const masks = [0, 1, 2].map(() => dataTex(new Uint8Array(256 * 256 * 4), 256));
     const attrTex = dataTex(new Uint8Array(ATTR * ATTR * 4), ATTR);
     const mat = new THREE.ShaderMaterial({
-      vertexShader, fragmentShader,
+      vertexShader, fragmentShader, fog: true,
       uniforms: {
+        ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
         tex: { value: Array(MAX_SLOTS).fill(fallback) }, scale: { value: Array(MAX_SLOTS).fill(8) },
         maskA: { value: masks[0] }, maskB: { value: masks[1] }, maskC: { value: masks[2] }, attrTex: { value: attrTex },
-        showAttr: { value: 0 }, sunDir: { value: new THREE.Vector3(0.4, 1.0, 0.3) }
+        showAttr: { value: 0 }, sunDir: { value: this.lightDir.clone() },
+        sunColor: { value: this.sunColor.clone() }, ambColor: { value: this.ambColor.clone() }
       }
     });
     const mesh = new THREE.Mesh(geo, mat);
@@ -323,6 +333,17 @@ export class TerrainView {
       d[k * 4 + 3] = f ? 255 : 0;
     }
     tex.needsUpdate = true;
+  }
+
+  // Terrain is lit like the game's background light: ambient + diffuse * N·L.
+  setLighting(toSun, diffuse, ambient) {
+    this.lightDir.copy(toSun);
+    this.sunColor.copy(diffuse).multiplyScalar(0.75);
+    this.ambColor.copy(ambient).lerp(new THREE.Color(0.5, 0.5, 0.5), 0.3);
+    for (const m of this.meshes.values()) {
+      const u = m.material.uniforms;
+      u.sunDir.value.copy(this.lightDir); u.sunColor.value.copy(this.sunColor); u.ambColor.value.copy(this.ambColor);
+    }
   }
 
   setAttrVisible(on) {

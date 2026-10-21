@@ -12,6 +12,7 @@
 <body>
 <header class="toolbar">
   <div class="brand">APIX <span>Map Studio</span></div>
+  <button type="button" id="btn-new" title="Nová mapa (Ctrl+N)">Nová</button>
   <button type="button" id="btn-open" title="Otvoriť mapu (Ctrl+O)">Otvoriť</button>
   <button type="button" id="btn-save" class="primary" title="Uložiť objekty (Ctrl+S)" disabled>Uložiť</button>
   <span class="sep"></span>
@@ -123,6 +124,35 @@
     </dl>
   </aside>
 </main>
+
+<dialog class="report" id="new-map">
+  <form method="dialog" id="new-form" class="new-form">
+    <div class="report-head"><h2>Nová mapa</h2><button type="button" id="new-close" aria-label="Zavrieť">✕</button></div>
+    <div class="report-body form-grid">
+      <label for="nm-name">Názov</label>
+      <input type="text" id="nm-name" required pattern="[A-Za-z0-9_]+" placeholder="napr. apix_dungeon_01" autocomplete="off">
+      <label for="nm-template">Šablóna</label>
+      <select id="nm-template">
+        <option value="empty">Prázdna rovina</option>
+        <option value="island">Ostrov (ukážka, 1×1)</option>
+        <option value="dungeon">Dungeon (miestnosti a chodby v skale)</option>
+      </select>
+      <label for="nm-x">Veľkosť</label>
+      <div class="size-row"><input type="number" id="nm-x" min="1" max="8" value="1"> × <input type="number" id="nm-y" min="1" max="8" value="1"> <span class="sub">terénov po 256 m</span></div>
+      <label for="nm-base" id="nm-base-label">Základná textúra</label>
+      <select id="nm-base">
+        <option value="d:/ymir work/terrainmaps/a/grass/grass 01.dds">Tráva</option>
+        <option value="d:/ymir work/terrainmaps/a/beach/beach sand 01.dds">Piesok</option>
+        <option value="d:/ymir work/terrainmaps/a/field/field 02.dds">Hlina</option>
+        <option value="d:/ymir work/terrainmaps/a/stone/stone02.dds">Kameň</option>
+        <option value="d:/ymir work/terrainmaps/b/stone/dc_rock_00.dds">Tmavá skala</option>
+      </select>
+      <p class="sub new-hint">Mapa sa vytvorí v priečinku WorldEditora a hneď otvorí.</p>
+      <p class="warn-text" id="nm-error"></p>
+      <div class="row-actions"><button type="submit" class="primary" id="nm-create">Vytvoriť</button></div>
+    </div>
+  </form>
+</dialog>
 
 <dialog class="report" id="report">
   <div class="report-head"><h2 id="report-title"></h2><button type="button" id="report-close" aria-label="Zavrieť">✕</button></div>

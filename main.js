@@ -5,6 +5,7 @@ const fs = require("fs");
 const { execFile } = require("child_process");
 const { pathToFileURL } = require("url");
 const { terrainKey, parseAreaData, saveObjects, parseTextureSet, saveTerrain } = require("./maplib");
+const { parseEnvironment } = require("./envlib");
 
 const APIX_ROOT = "C:\\Users\\micha\\Documents\\APIX";
 const EDITOR_ROOT = "C:\\Users\\micha\\Documents\\we_remix_v59__20260716-1745";
@@ -123,6 +124,51 @@ function listTerrainTextures() {
   return terrainTextures;
 }
 
+/* ---------- environments (.msenv in d:/ymir work/environment) ---------- */
+
+let environments = null;
+function listEnvironments() {
+  if (environments) return environments;
+  const seen = new Map();
+  const visit = (dir, rel) => {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const r = rel ? rel + "/" + e.name : e.name;
+      if (e.isDirectory()) visit(path.join(dir, e.name), r);
+      else if (/\.msenv$/i.test(e.name) && !seen.has(r.toLowerCase())) seen.set(r.toLowerCase(), { name: r, file: path.join(dir, e.name) });
+    }
+  };
+  for (const root of getAssetRoots()) visit(path.join(root, "ymir work", "environment"), "");
+  environments = [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return environments;
+}
+
+function loadEnvironment(name) {
+  if (!name) return null;
+  const hit = listEnvironments().find((e) => e.name.toLowerCase() === name.toLowerCase().replace(/\\/g, "/"));
+  if (!hit) return { name, missing: true };
+  const env = parseEnvironment(fs.readFileSync(hit.file, "latin1"));
+  for (const k of Object.keys(env.sky.faces)) {
+    const f = resolveAsset(env.sky.faces[k]);
+    env.sky.faces[k] = f ? assetUrl(f) : null;
+  }
+  return { name: hit.name, ...env };
+}
+
+function setEnvironment(dir, name) {
+  const file = path.join(dir, "Setting.txt");
+  const text = fs.readFileSync(file, "latin1");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backup = path.join(dir, "_studio_backup", stamp);
+  fs.mkdirSync(backup, { recursive: true });
+  fs.copyFileSync(file, path.join(backup, "Setting.txt"));
+  const line = `Environment\t${name || ""}`;
+  const out = /^Environment\b.*$/m.test(text) ? text.replace(/^Environment\b.*$/m, line) : text.replace(/\r?\n?$/, `\r\n${line}\r\n`);
+  fs.writeFileSync(file, out, "latin1");
+  return { backup };
+}
+
 const PREVIEWS = path.join(app.getPath("userData"), "texture-previews");
 function texturePreview(game) {
   const src = resolveAsset(game) || (fs.existsSync(game) ? game : null);
@@ -161,10 +207,38 @@ function openMap(dir) {
     terrains.push({ key, tx, ty, height: read("height.raw"), tile: read("tile.raw"), water: read("water.wtr"), attr: read("attr.atr") });
     objects = objects.concat(parseAreaData(readText(path.join(tdir, "AreaData.txt")), key));
   }
-  return { dir, name: path.basename(dir), size, textures, textureSetFile, terrains, objects };
+  const envName = (setting.match(/^Environment[ \t]+([^\r\n]*)/m) || [0, ""])[1].trim();
+  return { dir, name: path.basename(dir), size, textures, textureSetFile, terrains, objects, environment: loadEnvironment(envName) };
 }
 
 /* ---------- models: GR2 -> FBX cache ---------- */
+
+/* ---------- trees: SpeedTree (.spt) cannot be read, so the view builds a stand-in from its textures ---------- */
+// Bark and leaf textures sit next to the .spt; pick the ones whose names share the longest prefix with the tree.
+function treeInfo(p) {
+  const base = { kind: "tree", size: p.treeSize || 1000, name: p.name, shape: treeShape(p.name + " " + p.model) };
+  const spt = resolveAsset(p.model);
+  if (!spt) return base;
+  const stem = path.basename(spt, path.extname(spt)).toLowerCase();
+  let files;
+  try { files = fs.readdirSync(path.dirname(spt)).filter((f) => /\.dds$/i.test(f)); } catch { return base; }
+  const score = (f) => { const n = f.toLowerCase(); let i = 0; while (i < n.length && i < stem.length && n[i] === stem[i]) i++; return i; };
+  const best = (re) => files.filter((f) => re.test(f) && !/shadow/i.test(f)).sort((a, b) => score(b) - score(a))[0];
+  const bark = best(/bark|trunk|stamm/i);
+  const leaves = best(/lea(f|ves)|frond|needle|composite|free|blatt/i);
+  return {
+    ...base,
+    bark: bark ? assetUrl(path.join(path.dirname(spt), bark)) : null,
+    leaves: leaves ? assetUrl(path.join(path.dirname(spt), leaves)) : null
+  };
+}
+function treeShape(name) {
+  const n = name.toLowerCase();
+  if (/palm|coco/.test(n)) return "palm";
+  if (/pine|fir|spruce|cedar|deodar|hemlock|cypress|larch|conifer|tanne|fichte|sequoia|juniper/.test(n)) return "conifer";
+  if (/bush|shrub|fern|grass/.test(n)) return "bush";
+  return "broadleaf";
+}
 
 const converting = new Map();
 // Thumbnails ask for many models at once; run at most 3 exporter processes in parallel.
@@ -236,7 +310,7 @@ function thumbFile(crc) { return path.join(THUMBS, `${crc >>> 0}.png`); }
 function modelFor(crc) {
   const p = getLibrary().get(crc >>> 0);
   if (!p) return Promise.resolve({ kind: "unknown" });
-  if (/^tree$/i.test(p.type)) return Promise.resolve({ kind: "tree", size: p.treeSize || 1000, name: p.name });
+  if (/^tree$/i.test(p.type)) return Promise.resolve(treeInfo(p));
   if (!/\.gr2$/i.test(p.model)) return Promise.resolve({ kind: "marker", type: p.type, name: p.name });
   const out = path.join(CACHE, String(crc));
   const fbx = path.join(out, "m.fbx");
@@ -298,12 +372,36 @@ ipcMain.handle("map:choose", async () => {
   return r.canceled ? null : r.filePaths[0];
 });
 ipcMain.handle("map:open", (_, dir) => openMap(dir));
+ipcMain.handle("map:new", (_, params) => createBlankMap(params));
+
+// Prefabs: saved object groups (relative layout) in %APPDATA%\APIX Map Studio\prefabs\<name>.json
+const PREFABS = path.join(app.getPath("userData"), "prefabs");
+const prefabFile = (name) => {
+  if (!/^[\w \-]{1,60}$/.test(String(name || ""))) throw new Error("Názov prefabu: písmená, čísla, medzera, - a _");
+  return path.join(PREFABS, `${name}.json`);
+};
+ipcMain.handle("prefab:list", () => {
+  if (!fs.existsSync(PREFABS)) return [];
+  return fs.readdirSync(PREFABS).filter((f) => f.endsWith(".json")).map((f) => {
+    try { const p = JSON.parse(fs.readFileSync(path.join(PREFABS, f), "utf8")); return { name: p.name, count: p.items.length }; } catch { return null; }
+  }).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
+});
+ipcMain.handle("prefab:get", (_, name) => JSON.parse(fs.readFileSync(prefabFile(name), "utf8")));
+ipcMain.handle("prefab:save", (_, name, items) => {
+  fs.mkdirSync(PREFABS, { recursive: true });
+  fs.writeFileSync(prefabFile(name), JSON.stringify({ name, created: new Date().toISOString(), items }, null, 2));
+  return { name, count: items.length };
+});
+ipcMain.handle("prefab:delete", (_, name) => { fs.rmSync(prefabFile(name), { force: true }); return true; });
 ipcMain.handle("map:save", (_, dir, size, objects) => saveObjects(dir, size, objects));
 ipcMain.handle("terrain:save", (_, dir, payload) => saveTerrain(dir, payload));
 ipcMain.handle("textures:list", () => listTerrainTextures());
 ipcMain.handle("texture:preview", (_, game) => texturePreview(game));
 ipcMain.handle("texture:url", (_, game) => textureUrl(game));
 ipcMain.handle("export:write", (_, dir, files) => writeExport(dir, files));
+ipcMain.handle("env:list", () => listEnvironments().map((e) => e.name));
+ipcMain.handle("env:get", (_, name) => loadEnvironment(name));
+ipcMain.handle("env:set", (_, dir, name) => setEnvironment(dir, name));
 
 // Uncompressed 32-bit BGRX DDS, the same layout WorldEditor writes for minimap.dds.
 function ddsBgrx(width, height, rgba) {
@@ -360,19 +458,17 @@ async function callRenderer(method, params) {
 }
 
 // New flat map (raw height 32767, one base texture, no water) written by mapgen, then opened.
-function createBlankMap({ name, sizeX = 1, sizeY = 1, baseTexture = "d:/ymir work/terrainmaps/a/grass/grass 01.dds" }) {
+// template: "empty" (flat, one base texture), "island" (mapgen/maps/ostrov.js, 1x1) or "dungeon" (mapgen/maps/dungeon.js).
+function createBlankMap({ name, sizeX = 1, sizeY = 1, baseTexture = "d:/ymir work/terrainmaps/a/grass/grass 01.dds", template = "empty", seed }) {
   if (!/^[a-z0-9_]+$/i.test(String(name || ""))) throw new Error("Názov mapy: len písmená, čísla a _");
   const dir = path.join(EDITOR_ROOT, name);
   if (fs.existsSync(dir)) throw new Error(`Mapa ${name} už existuje`);
   const { generate } = require("./mapgen/mapgen.js");
-  generate({
-    name, sizeX, sizeY,
-    height: () => 32767,
-    texture: () => 1,
-    textures: [{ file: baseTexture }],
-    water: null,
-    objects: () => []
-  }, EDITOR_ROOT, name);
+  let spec;
+  if (template === "island") spec = { ...require("./mapgen/maps/ostrov.js"), name };
+  else if (template === "dungeon") spec = require("./mapgen/maps/dungeon.js").create({ name, sizeX, sizeY, seed: seed || name + Date.now() });
+  else spec = { name, sizeX, sizeY, height: () => 32767, texture: () => 1, textures: [{ file: baseTexture }], water: null, objects: () => [] };
+  generate(spec, EDITOR_ROOT, name);
   return dir;
 }
 

@@ -3,6 +3,8 @@
 import * as THREE from "three";
 import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
+import { DDSLoader } from "three/addons/loaders/DDSLoader.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 const templates = new Map();     // crc -> Promise<{ node, info }>
 
@@ -15,14 +17,97 @@ function placeholder(color, w, h) {
   const holder = new THREE.Group(); holder.add(g); return holder;
 }
 
-function treeNode(sizeCm) {
-  const h = Math.max(3, (sizeCm || 1000) / 100);
+/* Trees: SpeedTree files can't be rendered here, so each tree is a stand-in built from its own bark and
+   leaf textures: a trunk plus alpha-tested leaf cards arranged by shape (conifer, broadleaf, palm, bush). */
+const ddsLoader = new DDSLoader();
+const texCache = new Map();
+function dds(url, repeat) {
+  const key = url + (repeat ? "#r" : "");
+  if (!texCache.has(key)) {
+    const t = ddsLoader.load(url);
+    if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1, 3); }
+    texCache.set(key, t);
+  }
+  return texCache.get(key);
+}
+
+function seeded(text) {
+  let s = 0;
+  for (const ch of text) s = (s * 31 + ch.charCodeAt(0)) >>> 0;
+  return () => ((s = (s * 1103515245 + 12345) >>> 0) / 4294967296);
+}
+
+function card(w, h, pos, yaw, tilt) {
+  const g = new THREE.PlaneGeometry(w, h);
+  g.translate(0, h / 2, 0);
+  g.rotateX(tilt);
+  g.rotateY(yaw);
+  g.translate(pos.x, pos.y, pos.z);
+  return g;
+}
+
+// A branch: two crossed cards (flat + upright) starting at the trunk and reaching out along +x before yaw.
+// half: 0 = whole texture, 1/2 = lower/upper half (SpeedTree leaf maps often hold two branch sprites).
+function branch(len, pos, yaw, droop, half) {
+  const out = [];
+  for (const flat of [true, false]) {
+    const g = new THREE.PlaneGeometry(len, len * 0.6);
+    if (half) {
+      const uv = g.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setY(i, uv.getY(i) * 0.5 + (half === 2 ? 0.5 : 0));
+    }
+    g.translate(len / 2, 0, 0);
+    if (flat) g.rotateX(-Math.PI / 2 + 0.35);
+    g.rotateZ(-droop);
+    g.rotateY(yaw);
+    g.translate(pos.x, pos.y, pos.z);
+    out.push(g);
+  }
+  return out;
+}
+
+function treeNode(info) {
+  const h = Math.max(3, (info.size || 1000) / 100);
+  const rnd = seeded(info.name || "tree");
+  const cards = [];
+  let trunkH = h * 0.45, trunkR = h * 0.025;
+  if (info.shape === "conifer") {
+    trunkH = h * 0.95; trunkR = h * 0.022;
+    const tiers = 11;
+    for (let t = 0; t < tiers; t++) {
+      const f = t / (tiers - 1), y = h * (0.2 + 0.75 * f), len = h * 0.38 * (1 - f * 0.8) + 0.5;
+      const n = Math.max(4, Math.round(9 - f * 5));
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + t * 0.7 + rnd() * 0.4;
+        cards.push(...branch(len, new THREE.Vector3(0, y, 0), a, 0.25 + rnd() * 0.2, 1 + (i % 2)));
+      }
+    }
+    cards.push(card(h * 0.1, h * 0.14, new THREE.Vector3(0, h * 0.9, 0), 0, 0), card(h * 0.1, h * 0.14, new THREE.Vector3(0, h * 0.9, 0), Math.PI / 2, 0));
+  } else if (info.shape === "palm") {
+    trunkH = h * 0.92; trunkR = h * 0.022;
+    for (let i = 0; i < 12; i++) cards.push(...branch(h * 0.45, new THREE.Vector3(0, trunkH, 0), (i / 12) * Math.PI * 2 + rnd() * 0.3, 0.3 + rnd() * 0.4, 0));
+  } else {
+    const bush = info.shape === "bush";
+    if (bush) { trunkH = 0; }
+    const cy = bush ? h * 0.35 : h * 0.66, rad = bush ? h * 0.4 : h * 0.32;
+    const n = bush ? 16 : 42;
+    for (let i = 0; i < n; i++) {
+      const u = rnd() * 2 - 1, th = rnd() * Math.PI * 2, rr = rad * (0.35 + 0.65 * Math.cbrt(rnd()));
+      const p = new THREE.Vector3(Math.sqrt(1 - u * u) * Math.cos(th) * rr * 0.4, cy + u * rr * 0.6, Math.sqrt(1 - u * u) * Math.sin(th) * rr * 0.4);
+      cards.push(...branch(rad * 0.95, p, th, -0.2 + rnd() * 0.5, 0));
+    }
+  }
   const holder = new THREE.Group();
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, h * 0.35, 6), new THREE.MeshLambertMaterial({ color: 0x5b4330 }));
-  trunk.position.y = h * 0.175;
-  const crown = new THREE.Mesh(new THREE.ConeGeometry(h * 0.22, h * 0.8, 8), new THREE.MeshLambertMaterial({ color: 0x2f5d34 }));
-  crown.position.y = h * 0.6;
-  holder.add(trunk, crown);
+  if (trunkH > 0) {
+    const bark = info.bark ? new THREE.MeshLambertMaterial({ map: dds(info.bark, true) }) : new THREE.MeshLambertMaterial({ color: 0x5b4330 });
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(trunkR * 0.55, trunkR, trunkH, 7), bark);
+    trunk.position.y = trunkH / 2;
+    holder.add(trunk);
+  }
+  const leafMat = info.leaves
+    ? new THREE.MeshLambertMaterial({ map: dds(info.leaves), color: 0xb4c4ae, alphaTest: 0.35, side: THREE.DoubleSide })
+    : new THREE.MeshLambertMaterial({ color: 0x3b6b3a, side: THREE.DoubleSide });
+  holder.add(new THREE.Mesh(mergeGeometries(cards), leafMat));
   return holder;
 }
 
@@ -38,7 +123,7 @@ function loadFbx(url) {
 export function template(crc) {
   if (templates.has(crc)) return templates.get(crc);
   const job = window.studio.model(crc).then(async (info) => {
-    if (info.kind === "tree") return { node: treeNode(info.size), info };
+    if (info.kind === "tree") return { node: treeNode(info), info };
     if (info.kind === "fbx") {
       try {
         const model = await loadFbx(info.url);

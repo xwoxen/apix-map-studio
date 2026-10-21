@@ -5,6 +5,7 @@ import { TerrainModel, TerrainView } from "./terrain.js";
 import { TOOLS, paint, sample, attrMask, BrushCursor } from "./brush.js";
 import { ObjectLayer, template, toScene, fromScene } from "./objects.js";
 import { thumbnail } from "./thumbs.js";
+import { Environment } from "./env.js";
 
 const $ = (id) => document.getElementById(id);
 const deg = THREE.MathUtils.radToDeg, rad = THREE.MathUtils.degToRad;
@@ -19,10 +20,13 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x8fb3cf);
 scene.fog = new THREE.Fog(0x8fb3cf, 400, 1400);
 const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 6000);
-scene.add(new THREE.HemisphereLight(0xdfeaff, 0x5a5040, 1.6));
+const hemi = new THREE.HemisphereLight(0xdfeaff, 0x5a5040, 1.6);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff3dd, 2.0);
 sun.position.set(200, 400, 150);
 scene.add(sun);
+const environment = new Environment(scene, sun, hemi);
+let envName = "", envDirty = false, envList = null;
 
 const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.enableDamping = true;
@@ -33,7 +37,8 @@ scene.add(gizmo.getHelper ? gizmo.getHelper() : gizmo);
 
 const layer = new ObjectLayer();
 scene.add(layer.root);
-const selBox = new THREE.BoxHelper(undefined, 0xffd27a);
+const selBox3 = new THREE.Box3();
+const selBox = new THREE.Box3Helper(selBox3, 0xffd27a);
 selBox.visible = false;
 scene.add(selBox);
 
@@ -74,7 +79,7 @@ function restore(entry) {
     return { kind: "terrain", state: current };
   }
   const current = { kind: "objects", state: snapshot() };
-  objects = JSON.parse(entry.state); layer.sync(objects); select(selected && objects.find((o) => o.id === selected.id) ? selected.id : null); dirty = true; updateUi();
+  objects = JSON.parse(entry.state); layer.sync(objects); syncSelection(); dirty = true; updateUi();
   return current;
 }
 
@@ -83,7 +88,7 @@ function updateUi() {
   $("btn-undo").disabled = !undoStack.length;
   $("btn-redo").disabled = !redoStack.length;
   $("st-objects").textContent = `${objects.length} objektov`;
-  const unsaved = dirty || (heights && heights.isDirty);
+  const unsaved = dirty || envDirty || (heights && heights.isDirty);
   $("map-name").textContent = map ? map.name + (unsaved ? " •" : "") : "Žiadna mapa";
   document.title = map ? `${map.name}${unsaved ? " •" : ""} – APIX Map Studio` : "APIX Map Studio";
 }
@@ -112,7 +117,8 @@ async function openMap(dir) {
   orbit.target.set(w / 2, heights.at(w / 2, d / 2), d / 2);
   camera.position.set(w / 2, heights.at(w / 2, d / 2) + w * 0.55, d / 2 + w * 0.75);
   camera.far = Math.max(6000, w * 6); camera.updateProjectionMatrix();
-  scene.fog.near = w * 1.5; scene.fog.far = w * 5;
+  environment.apply(map.environment, view);
+  envName = map.environment ? map.environment.name : ""; envDirty = false;
   $("empty-state").hidden = true;
   updateUi();
   setMsg(`Mapa ${map.name}: ${map.size[0]}×${map.size[1]}, ${objects.length} objektov, ${map.textures.length} textúr.`);
@@ -120,7 +126,7 @@ async function openMap(dir) {
 
 layer.onLoaded = (pending) => {
   $("st-models").textContent = pending ? `načítavam modely: ${pending}` : "";
-  if (selected) selBox.setFromObject(layer.nodes.get(selected.id));
+  if (selection.size) refreshSelBox();
   if (!pending && shotRequested) setTimeout(() => window.studio.readyForShot(), 800);
 };
 
@@ -133,6 +139,10 @@ async function save() {
       const r = await window.studio.saveMap(map.dir, map.size, objects.map(({ id, terrain, ...o }) => o));
       parts.push(`${r.written} objektov`); backup = r.backup; dirty = false;
     }
+    if (envDirty) {
+      const r = await window.studio.setEnvironment(map.dir, envName);
+      parts.push(`prostredie ${envName || "(žiadne)"}`); backup = r.backup; envDirty = false;
+    }
     if (heights.isDirty) {
       const r = await window.studio.saveTerrain(map.dir, heights.savePayload());
       heights.markSaved();
@@ -143,39 +153,91 @@ async function save() {
   } catch (e) { setMsg("Uloženie zlyhalo: " + e.message, true); }
 }
 
-/* ---------- selection & editing ---------- */
+/* ---------- selection & editing ----------
+   One or many objects can be selected; the gizmo drives a pivot at their centre and every selected
+   object follows it (moved, or rotated around the pivot). */
 
-function select(id) {
-  selected = id ? objects.find((o) => o.id === id) : null;
-  const node = selected && layer.nodes.get(selected.id);
-  if (node) { gizmo.attach(node); selBox.setFromObject(node); selBox.visible = true; }
-  else { gizmo.detach(); selBox.visible = false; }
-  renderInspector();
+const selection = new Set();
+const pivot = new THREE.Group();
+scene.add(pivot);
+const UP = new THREE.Vector3(0, 1, 0);
+let clipboard = null;           // { items: [{ crc, dx, dz, lift, yaw }] } relative to the selection centre
+
+function selectedObjects() { return objects.filter((o) => selection.has(o.id)); }
+function centroid(list) {
+  const c = new THREE.Vector3();
+  for (const o of list) c.add(toScene(o));
+  return list.length ? c.divideScalar(list.length) : c;
+}
+function refreshSelBox() {
+  selBox3.makeEmpty();
+  for (const id of selection) { const n = layer.nodes.get(id); if (n) selBox3.expandByObject(n); }
+  selBox.visible = !selBox3.isEmpty();
+}
+function placePivot() {
+  const sel = selectedObjects();
+  if (!sel.length || mode === "terrain") { gizmo.detach(); return; }
+  pivot.position.copy(centroid(sel));
+  pivot.rotation.set(0, sel.length === 1 ? rad(sel[0].yaw) : 0, 0);
+  pivot.updateMatrixWorld();
+  gizmo.attach(pivot);
+}
+function syncSelection() {
+  for (const id of [...selection]) if (!objects.some((o) => o.id === id)) selection.delete(id);
+  if (selected && !selection.has(selected.id)) selected = null;
+  if (!selected && selection.size) selected = objects.find((o) => selection.has(o.id));
+  if (selected) selected = objects.find((o) => o.id === selected.id) || null;
+  placePivot(); refreshSelBox(); renderInspector();
+}
+// add: keep the current selection; with toggle a second click removes the object again
+function select(id, { add = false, toggle = false } = {}) {
+  if (!add) selection.clear();
+  if (id) {
+    if (toggle && selection.has(id)) selection.delete(id); else selection.add(id);
+    selected = selection.has(id) ? objects.find((o) => o.id === id) : null;
+  } else selected = null;
+  syncSelection();
+}
+function selectMany(ids, add = false) {
+  if (!add) selection.clear();
+  for (const id of ids) selection.add(id);
+  selected = null;
+  syncSelection();
 }
 
-function setMode(mode) {
-  gizmo.setMode(mode);
-  gizmo.showX = gizmo.showZ = mode === "translate";
+function setMode(m) {
+  gizmo.setMode(m);
+  gizmo.showX = gizmo.showZ = m === "translate";
   gizmo.showY = true;
-  $("mode-move").setAttribute("aria-pressed", String(mode === "translate"));
-  $("mode-rotate").setAttribute("aria-pressed", String(mode === "rotate"));
-  if (mode === "rotate") { gizmo.showX = false; gizmo.showZ = false; }
+  $("mode-move").setAttribute("aria-pressed", String(m === "translate"));
+  $("mode-rotate").setAttribute("aria-pressed", String(m === "rotate"));
 }
 
-let dragBefore = null;
+let dragBefore = null, dragStart = null;
 gizmo.addEventListener("dragging-changed", (e) => {
   orbit.enabled = !e.value;
-  if (e.value) dragBefore = snapshot();
-  else if (dragBefore) { pushHistory(dragBefore); dragBefore = null; renderInspector(); }
+  if (e.value) {
+    dragBefore = snapshot();
+    dragStart = { pivot: pivot.position.clone(), rot: pivot.rotation.y, items: selectedObjects().map((o) => ({ o, p: toScene(o), yaw: o.yaw })) };
+  } else if (dragBefore) {
+    pushHistory(dragBefore); dragBefore = null; dragStart = null;
+    placePivot(); renderInspector();
+  }
 });
 gizmo.addEventListener("objectChange", () => {
-  if (!selected) return;
-  const node = layer.nodes.get(selected.id);
-  if ($("snap").checked && gizmo.mode === "translate" && heights) node.position.y = heights.at(node.position.x, node.position.z);
-  node.rotation.x = 0; node.rotation.z = 0;
-  Object.assign(selected, fromScene(node.position));
-  selected.yaw = ((deg(node.rotation.y) % 360) + 360) % 360;
-  selBox.setFromObject(node);
+  if (!dragStart) return;
+  pivot.rotation.x = 0; pivot.rotation.z = 0;
+  const d = pivot.position.clone().sub(dragStart.pivot), r = pivot.rotation.y - dragStart.rot;
+  const snapGround = $("snap").checked && gizmo.mode === "translate" && heights;
+  for (const it of dragStart.items) {
+    const np = it.p.clone().sub(dragStart.pivot).applyAxisAngle(UP, r).add(dragStart.pivot).add(d);
+    if (snapGround) np.y = heights.at(np.x, np.z);
+    Object.assign(it.o, fromScene(np));
+    it.o.yaw = (((it.yaw + deg(r)) % 360) + 360) % 360;
+    const node = layer.nodes.get(it.o.id);
+    if (node) layer.place(node, it.o);
+  }
+  refreshSelBox();
   renderInspectorValues();
 });
 
@@ -184,42 +246,117 @@ function change(fn) {
   fn();
   layer.sync(objects);
   pushHistory(before);
-  if (selected) select(selected.id);
+  syncSelection();
 }
 
 function removeSelected() {
-  if (!selected) return;
-  const id = selected.id;
-  change(() => { objects = objects.filter((o) => o.id !== id); selected = null; });
-  setMsg("Objekt zmazaný.");
+  if (!selection.size) return;
+  const n = selection.size;
+  change(() => { objects = objects.filter((o) => !selection.has(o.id)); selection.clear(); selected = null; });
+  setMsg(n > 1 ? `Zmazaných ${n} objektov.` : "Objekt zmazaný.");
 }
 function duplicateSelected() {
-  if (!selected) return;
-  const copy = { ...selected, id: nextId++ };
-  const p = toScene(copy); p.x += 3; p.z += 3;
-  if (heights) p.y = heights.at(p.x, p.z);
-  Object.assign(copy, fromScene(p));
-  change(() => { objects.push(copy); selected = copy; });
-  setMsg("Objekt zduplikovaný.");
+  const sel = selectedObjects();
+  if (!sel.length) return;
+  const copies = sel.map((o) => {
+    const c = { ...o, id: nextId++ };
+    const p = toScene(c); p.x += 3; p.z += 3;
+    if (heights) p.y = heights.at(p.x, p.z) + (toScene(o).y - heights.at(toScene(o).x, toScene(o).z));
+    return Object.assign(c, fromScene(p));
+  });
+  change(() => { objects.push(...copies); selection.clear(); copies.forEach((c) => selection.add(c.id)); selected = copies[0]; });
+  setMsg(copies.length > 1 ? `Zduplikovaných ${copies.length} objektov.` : "Objekt zduplikovaný.");
 }
 function focusSelected() {
-  if (!selected) return;
-  const p = toScene(selected), off = camera.position.clone().sub(orbit.target).setLength(40);
+  const sel = selectedObjects();
+  if (!sel.length) return;
+  const p = centroid(sel), off = camera.position.clone().sub(orbit.target).setLength(sel.length > 1 ? 70 : 40);
   orbit.target.copy(p); camera.position.copy(p).add(off);
+}
+function groundSelected() {
+  change(() => { for (const o of selectedObjects()) { const p = toScene(o); o.z = heights.at(p.x, p.z) * 100; } });
+}
+
+// Group layout relative to its centre; lift = height above the ground, so a pasted group hugs new terrain.
+function captureGroup(list) {
+  const c = centroid(list);
+  return list.map((o) => { const p = toScene(o); return { crc: o.crc, dx: +(p.x - c.x).toFixed(3), dz: +(p.z - c.z).toFixed(3), lift: +(p.y - heights.at(p.x, p.z)).toFixed(3), yaw: o.yaw }; });
+}
+function placeGroup(items, x, z, yaw = 0) {
+  const r = rad(yaw);
+  return items.map((it) => {
+    const v = new THREE.Vector3(it.dx, 0, it.dz).applyAxisAngle(UP, r);
+    const px = x + v.x, pz = z + v.z;
+    const o = { id: nextId++, crc: it.crc, ...fromScene(new THREE.Vector3(px, heights.at(px, pz) + (it.lift || 0), pz)), yaw: ((((it.yaw || 0) + yaw) % 360) + 360) % 360, pitch: 0, roll: 0, bias: 0 };
+    return o;
+  });
+}
+function copySelection() {
+  const sel = selectedObjects();
+  if (!sel.length) return;
+  clipboard = { items: captureGroup(sel) };
+  setMsg(`Skopírovaných ${sel.length} objektov. Ctrl+V ich vloží pod kurzor.`);
+}
+function pasteAt(point) {
+  if (!clipboard || !point || !map) return;
+  const added = placeGroup(clipboard.items, point.x, point.z);
+  change(() => { objects.push(...added); selection.clear(); added.forEach((o) => selection.add(o.id)); selected = added[0]; });
+  setMsg(`Vložených ${added.length} objektov.`);
 }
 
 /* ---------- inspector ---------- */
 
+async function setEnvironmentByName(name) {
+  const env = name ? await window.studio.environment(name) : null;
+  environment.apply(env, view);
+  envName = name; envDirty = true; updateUi();
+  return env;
+}
+
+async function renderMapPanel(el) {
+  if (!map) { el.innerHTML = `<p class="muted" style="padding:0">Klikni na objekt v mape.</p>`; return; }
+  if (!envList) envList = await window.studio.environments();
+  el.innerHTML = `<p class="muted" style="padding:0">Klikni na objekt v mape.</p>
+    <div class="title">Mapa ${escapeHtml(map.name)}</div>
+    <div class="sub">${map.size[0]}×${map.size[1]} terénov · ${map.size[0] * 256}×${map.size[1] * 256} m</div>
+    <label class="sub" for="env-select">Prostredie (obloha, svetlo, hmla)</label>
+    <select id="env-select"><option value="">(žiadne – predvolené)</option>${envList.map((n) => `<option value="${escapeHtml(n)}" ${n.toLowerCase() === envName.toLowerCase() ? "selected" : ""}>${escapeHtml(n)}</option>`).join("")}</select>
+    <label class="check sub"><input type="checkbox" id="game-fog" ${environment.gameFog ? "checked" : ""}> Hmla ako v hre (blízko kamery)</label>
+    ${map.environment && map.environment.missing ? `<div class="sub warn-text">Prostredie ${escapeHtml(map.environment.name)} sa v klientovi nenašlo.</div>` : ""}`;
+  $("game-fog").addEventListener("change", async (e) => { environment.gameFog = e.target.checked; environment.apply(envName ? await window.studio.environment(envName) : null, view); });
+  $("env-select").addEventListener("change", (e) => setEnvironmentByName(e.target.value).then(() => setMsg(`Prostredie: ${e.target.value || "predvolené"} (uloží sa s mapou).`)));
+}
+
+function renderGroupPanel(el) {
+  const sel = selectedObjects();
+  const kinds = new Map();
+  for (const o of sel) { const n = (libByCrc.get(o.crc) || {}).name || o.crc; kinds.set(n, (kinds.get(n) || 0) + 1); }
+  el.innerHTML = `
+    <div class="title">Vybraných ${sel.length} objektov</div>
+    <div class="sub">${[...kinds].slice(0, 6).map(([n, c]) => `${escapeHtml(n)} ×${c}`).join(" · ")}${kinds.size > 6 ? " …" : ""}</div>
+    <div class="row-actions"><button type="button" id="i-ground">Položiť na terén</button><button type="button" id="i-dup">Duplikovať</button><button type="button" id="i-copy">Kopírovať</button><button type="button" class="danger" id="i-del">Zmazať</button></div>
+    <label class="sub" for="pf-name">Uložiť ako prefab</label>
+    <div class="size-row"><input type="text" id="pf-name" placeholder="napr. tabor_pri_ceste" pattern="[A-Za-z0-9_ -]+"><button type="button" id="pf-save">Uložiť</button></div>`;
+  $("i-ground").addEventListener("click", groundSelected);
+  $("i-dup").addEventListener("click", duplicateSelected);
+  $("i-copy").addEventListener("click", copySelection);
+  $("i-del").addEventListener("click", removeSelected);
+  $("pf-save").addEventListener("click", () => savePrefab($("pf-name").value.trim()));
+}
+
 function renderInspector() {
   const el = $("inspector");
-  if (!selected) { el.innerHTML = `<p class="muted" style="padding:0">Klikni na objekt v mape.</p>`; return; }
+  if (selection.size > 1) { renderGroupPanel(el); return; }
+  if (!selected) { renderMapPanel(el); return; }
   const info = libByCrc.get(selected.crc);
   el.innerHTML = `
     <div class="title">${info ? escapeHtml(info.name) : "Neznámy objekt"}</div>
     <div class="sub">${info ? escapeHtml(info.type) + " · " : ""}CRC ${selected.crc}</div>
     ${["x", "y", "z", "yaw"].map((k) => `<div class="field"><label for="f-${k}">${k === "yaw" ? "rotácia" : k + " (cm)"}</label><input type="number" id="f-${k}" step="${k === "yaw" ? 15 : 50}"></div>`).join("")}
-    <div class="row-actions"><button type="button" id="i-ground">Položiť na terén</button><button type="button" id="i-dup">Duplikovať</button><button type="button" class="danger" id="i-del">Zmazať</button></div>`;
+    <div class="row-actions"><button type="button" id="i-ground">Položiť na terén</button><button type="button" id="i-dup">Duplikovať</button><button type="button" id="i-copy">Kopírovať</button><button type="button" class="danger" id="i-del">Zmazať</button></div>
+    <p class="sub">Shift + klik pridá ďalší objekt, Shift + ťahanie vyberie obdĺžnikom.</p>`;
   renderInspectorValues();
+  $("i-copy").addEventListener("click", copySelection);
   for (const k of ["x", "y", "z", "yaw"]) {
     $("f-" + k).addEventListener("change", (e) => {
       const v = Number(e.target.value);
@@ -227,12 +364,12 @@ function renderInspector() {
       change(() => { selected[k] = k === "yaw" ? ((v % 360) + 360) % 360 : v; });
     });
   }
-  $("i-ground").addEventListener("click", () => change(() => { const p = toScene(selected); selected.z = heights.at(p.x, p.z) * 100; }));
+  $("i-ground").addEventListener("click", groundSelected);
   $("i-dup").addEventListener("click", duplicateSelected);
   $("i-del").addEventListener("click", removeSelected);
 }
 function renderInspectorValues() {
-  if (!selected) return;
+  if (!selected || selection.size > 1) return;
   for (const k of ["x", "y", "z", "yaw"]) { const f = $("f-" + k); if (f && document.activeElement !== f) f.value = Math.round(selected[k] * 10) / 10; }
 }
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
@@ -240,10 +377,21 @@ function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&am
 /* ---------- library & placing ---------- */
 
 let libType = "Building";
+const PREFABS = "Prefaby";
+async function renderPrefabs(q) {
+  const list = (await window.studio.prefabs()).filter((p) => !q || p.name.toLowerCase().includes(q));
+  if (libType !== PREFABS) return;
+  $("lib-list").innerHTML = list.map((p) => `<li data-prefab="${escapeHtml(p.name)}" class="${placing && placing.prefab === p.name ? "active" : ""}">
+      <span class="thumb prefab-icon">${p.count}</span><span class="name">${escapeHtml(p.name)}</span>
+      <button type="button" class="link" data-del-prefab="${escapeHtml(p.name)}" title="Zmazať prefab">zmazať</button>
+      <span class="folder">${p.count} objektov</span></li>`).join("")
+    || `<li class="muted">Zatiaľ žiadne prefaby. Vyber viac objektov (Shift) a v paneli Vlastnosti ich ulož ako prefab.</li>`;
+}
 function renderLibrary() {
   const q = $("lib-search").value.trim().toLowerCase();
   const types = [...new Set(library.map((p) => p.type))].sort();
-  $("lib-types").innerHTML = ["Všetko", ...types].map((t) => `<button type="button" class="chip" data-type="${escapeHtml(t)}" aria-pressed="${t === libType}">${escapeHtml(t)}</button>`).join("");
+  $("lib-types").innerHTML = ["Všetko", ...types, PREFABS].map((t) => `<button type="button" class="chip" data-type="${escapeHtml(t)}" aria-pressed="${t === libType}">${escapeHtml(t)}</button>`).join("");
+  if (libType === PREFABS) { thumbObserver.disconnect(); renderPrefabs(q); return; }
   const rows = library.filter((p) => (libType === "Všetko" || p.type === libType) && (!q || p.name.toLowerCase().includes(q) || p.folder.toLowerCase().includes(q)));
   $("lib-list").innerHTML = rows.slice(0, 400).map((p) =>
     `<li data-crc="${p.crc}" class="${placing && placing.crc === p.crc ? "active" : ""}"><img class="thumb" data-crc="${p.crc}" alt=""><span class="name">${escapeHtml(p.name)}</span><span class="type">${escapeHtml(p.type)}</span><span class="folder">${escapeHtml(p.folder)}</span></li>`).join("")
@@ -276,10 +424,51 @@ function showPreview(crc) {
   thumbnail(crc, true).then((url) => { if (url && img.dataset.crc === String(crc)) img.src = url; });
 }
 $("lib-list").addEventListener("mouseover", (e) => { const li = e.target.closest("[data-crc]"); if (li) showPreview(Number(li.dataset.crc)); });
-$("lib-list").addEventListener("mouseleave", () => { if (placing) showPreview(placing.crc); else $("lib-preview").hidden = true; });
+$("lib-list").addEventListener("mouseleave", () => { if (placing && placing.crc) showPreview(placing.crc); else $("lib-preview").hidden = true; });
 $("lib-search").addEventListener("input", renderLibrary);
 $("lib-types").addEventListener("click", (e) => { const b = e.target.closest("[data-type]"); if (b) { libType = b.dataset.type; renderLibrary(); } });
-$("lib-list").addEventListener("click", (e) => { const li = e.target.closest("[data-crc]"); if (li && map) startPlacing(Number(li.dataset.crc)); });
+$("lib-list").addEventListener("click", async (e) => {
+  const del = e.target.closest("[data-del-prefab]");
+  if (del) { e.stopPropagation(); await window.studio.deletePrefab(del.dataset.delPrefab); renderLibrary(); setMsg(`Prefab ${del.dataset.delPrefab} zmazaný.`); return; }
+  const pf = e.target.closest("[data-prefab]");
+  if (pf && map) { startPlacingPrefab(pf.dataset.prefab); return; }
+  const li = e.target.closest("[data-crc]");
+  if (li && map) startPlacing(Number(li.dataset.crc));
+});
+
+async function savePrefab(name) {
+  if (!name) { setMsg("Zadaj názov prefabu.", true); return; }
+  const sel = selectedObjects();
+  if (!sel.length) return;
+  try {
+    await window.studio.savePrefab(name, captureGroup(sel));
+    setMsg(`Prefab ${name} uložený (${sel.length} objektov). Nájdeš ho v knižnici pod „Prefaby“.`);
+    if (libType === PREFABS) renderLibrary();
+  } catch (e) { setMsg(String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""), true); }
+}
+
+function ghostify(node) {
+  const g = node.clone(true);
+  g.traverse((m) => { if (m.isMesh) { m.material = (Array.isArray(m.material) ? m.material : [m.material]).map((x) => { const c = x.clone(); c.transparent = true; c.opacity = 0.55; return c; }); if (m.material.length === 1) m.material = m.material[0]; } });
+  return g;
+}
+
+async function startPlacingPrefab(name) {
+  stopPlacing();
+  const data = await window.studio.prefab(name);
+  placing = { prefab: name, items: data.items, name: `prefab ${name}`, ghost: new THREE.Group(), yaw: 0 };
+  scene.add(placing.ghost);
+  $("placing").hidden = false; $("placing-name").textContent = placing.name;
+  select(null); renderLibrary(); $("lib-preview").hidden = true;
+  for (const it of data.items) {
+    const { node } = await template(it.crc);
+    if (!placing || placing.prefab !== name) return;
+    const g = ghostify(node);
+    g.position.set(it.dx, it.lift || 0, it.dz);
+    g.rotation.y = rad(it.yaw || 0);
+    placing.ghost.add(g);
+  }
+}
 
 async function startPlacing(crc) {
   stopPlacing();
@@ -436,7 +625,7 @@ $("btn-ground-all").addEventListener("click", groundAllObjects);
 
 const ray = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
-let downAt = null;
+let downAt = null, lastObjectHit = null;
 function pick(e, targets) {
   const r = renderer.domElement.getBoundingClientRect();
   pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -449,6 +638,7 @@ renderer.domElement.addEventListener("pointermove", (e) => {
   if (hit) {
     const m = fromScene(hit.point);
     $("st-cursor").textContent = `x ${Math.round(m.x)} · y ${Math.round(m.y)} · výška ${(hit.point.y).toFixed(1)} m`;
+    lastObjectHit = hit.point.clone();
     if (placing) { placing.ghost.position.set(hit.point.x, heights.at(hit.point.x, hit.point.z), hit.point.z); placing.ghost.rotation.y = rad(placing.yaw); }
     if (mode === "terrain") { cursor.update(heights, hit.point.x, hit.point.z, brush.radius); lastHit = hit.point; }
   } else if (mode === "terrain") cursor.line.visible = false;
@@ -477,6 +667,15 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   if (mode === "terrain") return;
   if (!map || !downAt || e.button !== 0 || gizmo.dragging) return;
   if (Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;      // it was a camera drag
+  if (placing && placing.prefab) {
+    const hit = pick(e, [terrainGroup])[0];
+    if (!hit) return;
+    const added = placeGroup(placing.items, hit.point.x, hit.point.z, placing.yaw);
+    change(() => { objects.push(...added); });
+    setMsg(`Položený ${placing.name} (${added.length} objektov).`);
+    if (!e.shiftKey) { stopPlacing(); selectMany(added.map((o) => o.id)); }
+    return;
+  }
   if (placing) {
     const hit = pick(e, [terrainGroup])[0];
     if (!hit) return;
@@ -487,8 +686,46 @@ renderer.domElement.addEventListener("pointerup", (e) => {
     if (!e.shiftKey) { stopPlacing(); select(o.id); }
     return;
   }
+  if (marquee) return;
   const hit = pick(e, [layer.root])[0];
+  if (e.shiftKey) { if (hit) select(hit.object.userData.id, { add: true, toggle: true }); return; }
   select(hit ? hit.object.userData.id : null);
+});
+
+// Shift + drag in object mode: rectangle selection (captured before the camera controls see the event).
+let marquee = null;
+viewport.addEventListener("pointerdown", (e) => {
+  if (!map || mode !== "objects" || placing || !e.shiftKey || e.button !== 0) return;
+  marquee = { x0: e.clientX, y0: e.clientY, el: null, moved: false };
+  orbit.enabled = false;
+}, true);
+window.addEventListener("pointermove", (e) => {
+  if (!marquee) return;
+  const r = viewport.getBoundingClientRect();
+  if (!marquee.moved && Math.hypot(e.clientX - marquee.x0, e.clientY - marquee.y0) < 5) return;
+  marquee.moved = true;
+  if (!marquee.el) { marquee.el = document.createElement("div"); marquee.el.className = "marquee"; viewport.appendChild(marquee.el); }
+  const x = Math.min(e.clientX, marquee.x0) - r.left, y = Math.min(e.clientY, marquee.y0) - r.top;
+  Object.assign(marquee.el.style, { left: x + "px", top: y + "px", width: Math.abs(e.clientX - marquee.x0) + "px", height: Math.abs(e.clientY - marquee.y0) + "px" });
+});
+window.addEventListener("pointerup", (e) => {
+  if (!marquee) return;
+  const m = marquee;
+  setTimeout(() => { marquee = null; }, 0);
+  orbit.enabled = true;
+  if (m.el) m.el.remove();
+  if (!m.moved) return;
+  const r = viewport.getBoundingClientRect();
+  const x0 = Math.min(e.clientX, m.x0), x1 = Math.max(e.clientX, m.x0), y0 = Math.min(e.clientY, m.y0), y1 = Math.max(e.clientY, m.y0);
+  const ids = [];
+  for (const o of objects) {
+    const p = toScene(o).project(camera);
+    if (p.z > 1) continue;
+    const sx = r.left + (p.x + 1) / 2 * r.width, sy = r.top + (1 - p.y) / 2 * r.height;
+    if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) ids.push(o.id);
+  }
+  selectMany(ids, true);
+  setMsg(`Vybraných ${selection.size} objektov.`);
 });
 
 /* ---------- keyboard & buttons ---------- */
@@ -500,9 +737,13 @@ window.addEventListener("keydown", (e) => {
   if (k === "t" && !e.ctrlKey) { setMainMode(mode === "terrain" ? "objects" : "terrain"); return; }
   if (e.ctrlKey && k === "s") { e.preventDefault(); save(); }
   else if (e.ctrlKey && k === "o") { e.preventDefault(); chooseAndOpen(); }
+  else if (e.ctrlKey && k === "n") { e.preventDefault(); openNewMap(); }
   else if (e.ctrlKey && k === "z") { e.preventDefault(); undo(); }
   else if (e.ctrlKey && (k === "y" || (e.shiftKey && k === "z"))) { e.preventDefault(); redo(); }
   else if (e.ctrlKey && k === "d") { e.preventDefault(); duplicateSelected(); }
+  else if (e.ctrlKey && k === "c") { e.preventDefault(); copySelection(); }
+  else if (e.ctrlKey && k === "v") { e.preventDefault(); pasteAt(lastObjectHit); }
+  else if (e.ctrlKey && k === "a" && mode === "objects") { e.preventDefault(); selectMany(objects.map((o) => o.id)); }
   else if (k === "delete") removeSelected();
   else if (k === "w") setMode("translate");
   else if (k === "e") setMode("rotate");
@@ -520,6 +761,36 @@ async function chooseAndOpen() {
 function confirmDiscard() { return window.confirm("Máš neuložené zmeny. Zahodiť ich a otvoriť inú mapu?"); }
 
 $("btn-open").addEventListener("click", chooseAndOpen);
+
+/* ---------- new map dialog ---------- */
+function openNewMap() {
+  if ((dirty || envDirty || (heights && heights.isDirty)) && !confirmDiscard()) return;
+  $("nm-error").textContent = "";
+  syncNewForm();
+  $("new-map").showModal();
+  $("nm-name").focus();
+}
+function syncNewForm() {
+  const t = $("nm-template").value;
+  $("nm-base").hidden = $("nm-base-label").hidden = t !== "empty";
+  $("nm-x").disabled = $("nm-y").disabled = t === "island";
+}
+$("nm-template").addEventListener("change", syncNewForm);
+$("new-close").addEventListener("click", () => $("new-map").close());
+$("new-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const params = { name: $("nm-name").value.trim(), template: $("nm-template").value, sizeX: Number($("nm-x").value), sizeY: Number($("nm-y").value), baseTexture: $("nm-base").value };
+  $("nm-create").disabled = true;
+  try {
+    const dir = await window.studio.newMap(params);
+    $("new-map").close();
+    dirty = false; envDirty = false;
+    await openMap(dir);
+  } catch (err) {
+    $("nm-error").textContent = String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+  } finally { $("nm-create").disabled = false; }
+});
+$("btn-new").addEventListener("click", openNewMap);
 $("btn-open-2").addEventListener("click", chooseAndOpen);
 $("btn-save").addEventListener("click", save);
 $("btn-undo").addEventListener("click", undo);
@@ -580,7 +851,7 @@ function renderTopDown(x0, z0, w, h, px, py) {
   cam.up.set(0, 0, -1);
   cam.lookAt(x0 + w / 2, 0, z0 + h / 2);
   const target = new THREE.WebGLRenderTarget(px, py, { colorSpace: THREE.SRGBColorSpace });
-  const hidden = [cursor.line, selBox, gizmo.getHelper ? gizmo.getHelper() : gizmo].filter((o) => o.visible);
+  const hidden = [cursor.line, selBox, gizmo.getHelper ? gizmo.getHelper() : gizmo, environment.sky].filter((o) => o && o.visible);
   hidden.forEach((o) => { o.visible = false; });
   const fog = scene.fog; scene.fog = null;
   renderer.setRenderTarget(target);
@@ -787,6 +1058,22 @@ const API = {
     updateUi();
     return { changed: [...parts] };
   },
+  list_prefabs: () => window.studio.prefabs(),
+  async save_prefab({ name, ids }) {
+    requireMap();
+    const list = objects.filter((o) => ids.includes(o.id));
+    if (!list.length) throw new Error("Žiadny z objektov neexistuje");
+    return window.studio.savePrefab(name, captureGroup(list));
+  },
+  async place_prefab({ name, x, y, yaw = 0 }) {
+    requireMap();
+    const data = await window.studio.prefab(name);
+    const added = placeGroup(data.items, x, y, yaw);
+    change(() => { objects.push(...added); });
+    return { added: added.map(describe) };
+  },
+  list_environments({ query = "" } = {}) { return window.studio.environments().then((l) => l.filter((n) => n.toLowerCase().includes(query.toLowerCase()))); },
+  async set_environment({ name }) { requireMap(); const env = await setEnvironmentByName(name || ""); renderInspector(); return { environment: name || null, found: Boolean(env && !env.missing) }; },
   ground_all_objects() { requireMap(); groundAllObjects(); return { objects: objects.length }; },
   check_map: () => checkMap(),
   export: () => exportMaps(),
@@ -826,4 +1113,4 @@ window.__studio = {
   }
 };
 updateUi();
-renderer.setAnimationLoop(() => { orbit.update(); renderer.render(scene, camera); });
+renderer.setAnimationLoop(() => { orbit.update(); environment.follow(camera); renderer.render(scene, camera); });

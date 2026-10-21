@@ -49,6 +49,24 @@ Prvé spustenie po inštalácii: `npm install` (Electron musí mať povolený in
   v `AreaProperty.txt`, `attr.atr`, sada textúr) a zálohuje ich. Nepoužité výšky vody sa vynechajú.
 - Späť / Znova funguje spoločne pre objekty aj terén (jeden ťah štetcom = jeden krok).
 
+### Vzhľad a pohodlie (fáza 4)
+
+- **Stromy**: SpeedTree (`.spt`) sa nedá vykresliť, preto Map Studio stavia náhradu z textúr kôry
+  a lístia uložených vedľa `.spt` – kmeň a vetvy v tvare podľa druhu (ihličnan, listnáč, palma, ker).
+- **Prostredie** (`.msenv`): v paneli Vlastnosti (keď nie je vybraný objekt) sa vyberá prostredie
+  mapy; zobrazí sa slnko, okolité svetlo, hmla a obloha (6 textúr alebo farebný prechod). Uloží sa do
+  `Setting.txt` (`Environment`). Hmla je predvolene odsunutá pre pohľad z diaľky, „Hmla ako v hre“ zapne
+  skutočné vzdialenosti.
+- **Nová mapa** (Ctrl+N): názov, veľkosť v terénoch a šablóna – prázdna rovina so základnou textúrou,
+  ostrov alebo **dungeon** (miestnosti a chodby vytesané 20 m do skaly, útesy blokované, boss miestnosť
+  najďalej od štartu, prostredie `dark.msenv`; `mapgen/maps/dungeon.js`).
+- **Viac objektov naraz**: Shift + klik pridá/odoberie, Shift + ťahanie vyberie obdĺžnikom, Ctrl+A všetko.
+  Úchyty posúvajú a otáčajú celú skupinu okolo jej stredu. Ctrl+C / Ctrl+V kopíruje skupinu pod kurzor
+  (každý kus sadne na terén), Ctrl+D duplikuje, Del maže.
+- **Prefaby**: skupinu ulož v paneli Vlastnosti ako prefab; v knižnici pod „Prefaby“ ju vložíš celú
+  (R otočí o 45°, Shift + klik viac kusov). Ukladajú sa do `%APPDATA%\APIX Map Studio\prefabs`.
+- Overené aj mapy 2×2 (dungeon 512×512 m, terény na seba nadväzujú).
+
 ### Kontrola a export (fáza 3, tlačidlá v hornej lište)
 
 - **Kontrola** pred nasadením: objekty mimo mapy, CRC mimo knižnice klienta, chýbajúce modely,
@@ -69,7 +87,8 @@ takže funguje Späť aj označenie neuložených zmien.
 Nástroje: `mapstudio_launch`, `_status`, `_open_map`, `_list_objects`, `_search_library`,
 `_add_objects`, `_update_objects`, `_delete_objects`, `_terrain_height`, `_paint`, `_add_texture`,
 `_ground_all_objects`, `_undo`, `_redo`, `_save`, `_screenshot` (3D pohľad do PNG, voliteľne s kamerou),
-`_window_screenshot`, `_check_map`, `_export`. Pozície sú v metroch od severozápadného rohu mapy
+`_window_screenshot`, `_check_map`, `_export`, `_new_map` (šablóny empty / island / dungeon),
+`_list_environments`, `_set_environment`, `_list_prefabs`, `_save_prefab`, `_place_prefab`. Pozície sú v metroch od severozápadného rohu mapy
 (x na východ, y na juh, z výška).
 
 ## Súradnice
@@ -92,4 +111,5 @@ načítaní a uložení nezmenia.
 
 2. ~~Štetce terénu (výška, textúry, voda, atribúty).~~ Hotové.
 3. ~~Kontrola, minimapa a atlas, MCP pre Clauda.~~ Hotové.
-4. Serverové súbory (`server_attr`, spawny `regen.txt`), šablóny dungeonov, skutočné stromy (SpeedTree).
+4. ~~Stromy, prostredie, nová mapa so šablónami, výber viacerých objektov, prefaby.~~ Hotové.
+5. Mapa do hry: serverové súbory (`server_attr`, `Town.txt`), pack klienta, spawny (`regen.txt`).

@@ -85,6 +85,8 @@ input[type=search], .inspector input[type=number] {
 .inspector-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .inspector-body .title { font-weight: 600; overflow-wrap: anywhere; }
 .inspector-body .sub { color: var(--muted); font-size: 11px; font-family: var(--mono); overflow-wrap: anywhere; }
+.inspector-body select { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 5px 6px; color: var(--fg); width: 100%; font: inherit; }
+.warn-text { color: var(--danger); }
 .field { display: grid; grid-template-columns: 56px 1fr; align-items: center; gap: 6px; }
 .field label { color: var(--muted); }
 .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -133,6 +135,16 @@ input[type=search], .inspector input[type=number] {
 .issues b { margin-right: 6px; }
 button.link { background: none; border: none; color: var(--accent); padding: 0 4px; text-decoration: underline; }
 .report-img { max-width: 100%; border-radius: 6px; margin-top: 6px; image-rendering: pixelated; }
+
+.marquee { position: absolute; border: 1px dashed var(--accent); background: rgba(217, 163, 91, .12); pointer-events: none; }
+.prefab-icon { display: grid; place-items: center; font: 600 15px var(--mono); color: var(--accent); }
+.lib-list li .link { font-size: 11px; }
+.form-grid { display: grid; grid-template-columns: 110px 1fr; gap: 8px 10px; align-items: center; }
+.form-grid label { color: var(--muted); }
+.form-grid input[type=text], .form-grid select, .form-grid input[type=number] { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 5px 8px; color: var(--fg); font: inherit; }
+.form-grid input[type=number] { width: 64px; }
+.form-grid .new-hint, .form-grid #nm-error, .form-grid .row-actions { grid-column: 1 / -1; margin: 0; }
+.size-row { display: flex; align-items: center; gap: 6px; }
 
 .status { display: flex; gap: 18px; padding: 5px 12px; background: var(--panel); border-top: 1px solid var(--line); color: var(--muted); font-family: var(--mono); font-size: 12px; }
 .status .msg { margin-left: auto; color: var(--fg); font-family: var(--font); }
