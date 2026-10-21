@@ -7,6 +7,7 @@ import { ObjectLayer, template, toScene, fromScene } from "./objects.js";
 import { thumbnail } from "./thumbs.js";
 import { Environment } from "./env.js";
 import { Walker } from "./walker.js";
+import { SpawnLayer, SPAWN_TYPES } from "./spawns.js";
 
 const $ = (id) => document.getElementById(id);
 const deg = THREE.MathUtils.radToDeg, rad = THREE.MathUtils.degToRad;
@@ -69,6 +70,7 @@ function pushHistory(before, kind = "objects") {
   undoStack.push({ kind, state: before }); if (undoStack.length > 100) undoStack.shift();
   redoStack.length = 0;
   if (kind === "objects") dirty = true;
+  if (kind === "spawns") spawnsDirty = true;
   updateUi();
 }
 function restore(entry) {
@@ -77,6 +79,13 @@ function restore(entry) {
     view.refresh(entry.state.keys(), new Set(["height", "tile", "water", "attr"]));
     updateUi();
     return { kind: "terrain", state: current };
+  }
+  if (entry.kind === "spawns") {
+    const current = { kind: "spawns", state: JSON.stringify(spawns) };
+    spawns = JSON.parse(entry.state); spawnsDirty = true;
+    if (!spawns.some((x) => x.id === selectedSpawn)) selectedSpawn = null;
+    rebuildSpawns(); syncSpawnForm(); updateUi();
+    return current;
   }
   const current = { kind: "objects", state: snapshot() };
   objects = JSON.parse(entry.state); layer.sync(objects); syncSelection(); dirty = true; updateUi();
@@ -88,7 +97,7 @@ function updateUi() {
   $("btn-undo").disabled = !undoStack.length;
   $("btn-redo").disabled = !redoStack.length;
   $("st-objects").textContent = `${objects.length} objektov`;
-  const unsaved = dirty || envDirty || (heights && heights.isDirty);
+  const unsaved = dirty || envDirty || spawnsDirty || (heights && heights.isDirty);
   $("map-name").textContent = map ? map.name + (unsaved ? " •" : "") : "Žiadna mapa";
   document.title = map ? `${map.name}${unsaved ? " •" : ""} – APIX Map Studio` : "APIX Map Studio";
 }
@@ -119,6 +128,7 @@ async function openMap(dir) {
   layer.clear();
   objects = map.objects.map((o) => ({ ...o, id: nextId++ }));
   for (const o of objects) layer.add(o);
+  await loadSpawns();
   undoStack.length = redoStack.length = 0; dirty = false;
   select(null);
   resetView();
@@ -149,6 +159,10 @@ async function save() {
     if (envDirty) {
       const r = await window.studio.setEnvironment(map.dir, envName);
       parts.push(`prostredie ${envName || "(žiadne)"}`); backup = r.backup; envDirty = false;
+    }
+    if (spawnsDirty) {
+      const r = await window.studio.saveSpawns(map.dir, spawns);
+      parts.push(`${r.count} spawnov`); if (r.backup) backup = r.backup; spawnsDirty = false;
     }
     if (heights.isDirty) {
       const r = await window.studio.saveTerrain(map.dir, heights.savePayload());
@@ -547,17 +561,19 @@ let painting = false, lastHit = null, paintQueued = null, lastPaintAt = null;
 
 function setMainMode(m) {
   mode = m;
-  for (const t of ["objects", "terrain"]) {
+  for (const t of ["objects", "terrain", "spawns"]) {
     $("tab-" + t).setAttribute("aria-selected", String(t === m));
     $("pane-" + t).hidden = t !== m;
   }
+  spawnLayer.root.visible = m === "spawns";
+  if (m === "spawns") { stopPlacing(); select(null); ensureMobs(); }
   if (m === "terrain") {
     stopPlacing(); select(null);
   } else {
     cursor.line.visible = false;
   }
   if (view) view.setAttrVisible(m === "terrain" && brush.tool === "attr");
-  $("keys-objects").hidden = m !== "objects"; $("keys-terrain").hidden = m !== "terrain";
+  $("keys-objects").hidden = m !== "objects"; $("keys-terrain").hidden = m !== "terrain"; $("keys-spawns").hidden = m !== "spawns";
 }
 
 function setTool(tool) {
@@ -666,6 +682,104 @@ for (const f of ["block", "water", "banpk"]) $("attr-" + f).addEventListener("ch
 $("btn-add-texture").addEventListener("click", openCatalogue);
 $("btn-ground-all").addEventListener("click", groundAllObjects);
 
+/* ---------- spawns mode (renderer/spawns.js): monster / npc spawns saved to <map>/_studio/spawns.json ---------- */
+
+let spawns = [], spawnsDirty = false, nextSpawnId = 1, selectedSpawn = null, mobList = null;
+const mobByVnum = new Map();
+const spawnLayer = new SpawnLayer((x, z) => (heights ? heights.at(x, z) : 0));
+spawnLayer.root.visible = false;
+scene.add(spawnLayer.root);
+
+function mobLabel(vnum) { const m = mobByVnum.get(vnum); return m ? `${m.name} (${vnum})` : String(vnum); }
+function rebuildSpawns() {
+  spawnLayer.clear();
+  for (const s of spawns) spawnLayer.set(s, mobLabel(s.vnum));
+  spawnLayer.highlight(selectedSpawn);
+  renderSpawnList();
+}
+async function loadSpawns() {
+  spawns = (await window.studio.spawns(map.dir)).map((s) => ({ ...s, id: nextSpawnId++ }));
+  spawnsDirty = false; selectedSpawn = null;
+  rebuildSpawns(); syncSpawnForm();
+}
+async function ensureMobs() {
+  if (mobList) return;
+  mobList = await window.studio.mobs();
+  for (const m of mobList) mobByVnum.set(m.vnum, m);
+  renderMobList(); rebuildSpawns();
+}
+function changeSpawns(fn) {
+  const before = JSON.stringify(spawns);
+  fn();
+  pushHistory(before, "spawns");
+  spawnsDirty = true;
+  rebuildSpawns(); syncSpawnForm(); updateUi();
+}
+function spawnForm() {
+  return { type: $("sp-type").value, vnum: Number($("sp-vnum").value) || 0, count: Math.max(1, Number($("sp-count").value) || 1),
+    radius: Math.max(1, Number($("sp-radius").value) || 1), respawn: Math.max(1, Number($("sp-respawn").value) || 60) };
+}
+function syncSpawnForm() {
+  const s = spawns.find((x) => x.id === selectedSpawn);
+  $("sp-delete").hidden = !s;
+  $("sp-state").textContent = s ? `Vybraný spawn: ${mobLabel(s.vnum)} na x ${Math.round(s.x)}, y ${Math.round(s.y)}. Zmeny polí ho upravia.` : "Nový spawn: vyber monštrum a klikni na terén.";
+  if (!s) return;
+  $("sp-type").value = s.type; $("sp-vnum").value = s.vnum; $("sp-count").value = s.count; $("sp-radius").value = s.radius; $("sp-respawn").value = s.respawn;
+  renderMobList();
+}
+function selectSpawn(id) { selectedSpawn = id; spawnLayer.highlight(id); syncSpawnForm(); renderSpawnList(); }
+function addSpawnAt(x, y, values = spawnForm()) {
+  if (!values.vnum) { setMsg("Najprv vyber monštrum alebo NPC zo zoznamu (alebo zadaj vnum).", true); return null; }
+  const s = { id: nextSpawnId++, ...values, x: +x.toFixed(2), y: +y.toFixed(2), direction: 0 };
+  changeSpawns(() => { spawns.push(s); });
+  selectSpawn(s.id);
+  setMsg(`Spawn ${mobLabel(s.vnum)} položený.`);
+  return s;
+}
+function deleteSpawn() {
+  if (selectedSpawn === null) return;
+  changeSpawns(() => { spawns = spawns.filter((s) => s.id !== selectedSpawn); });
+  selectSpawn(null);
+}
+function renderMobList() {
+  if (!mobList) return;
+  const q = $("sp-search").value.trim().toLowerCase(), npc = $("sp-type").value === "npc";
+  const rows = mobList.filter((m) => (npc ? m.type === "NPC" : m.type !== "NPC") && (!q || m.name.toLowerCase().includes(q) || String(m.vnum).startsWith(q))).slice(0, 300);
+  $("sp-mobs").innerHTML = rows.map((m) => `<li data-vnum="${m.vnum}" class="${Number($("sp-vnum").value) === m.vnum ? "active" : ""}"><span class="name">${escapeHtml(m.name)}</span><span class="type">${escapeHtml(m.type)}${m.level ? " · lv " + m.level : ""}</span><span class="folder">${m.vnum} · ${escapeHtml(m.rank || "")} · ${escapeHtml(m.folder || "")}</span></li>`).join("")
+    || `<li class="muted">Nič nenájdené.</li>`;
+}
+function renderSpawnList() {
+  $("sp-title").textContent = `Spawny na mape (${spawns.length})`;
+  $("sp-list").innerHTML = spawns.map((s) => `<li data-spawn="${s.id}" class="${s.id === selectedSpawn ? "active" : ""}"><span class="name">${escapeHtml(mobLabel(s.vnum))}</span><span class="type">${SPAWN_TYPES[s.type].label}${s.type === "m" ? " ×" + s.count : ""}</span><span class="folder">x ${Math.round(s.x)} · y ${Math.round(s.y)} · r ${s.radius} m · ${s.respawn} s</span></li>`).join("")
+    || `<li class="muted">Zatiaľ žiadne spawny.</li>`;
+}
+$("sp-search").addEventListener("input", renderMobList);
+$("sp-mobs").addEventListener("click", (e) => {
+  const li = e.target.closest("li[data-vnum]");
+  if (!li) return;
+  $("sp-vnum").value = li.dataset.vnum;
+  formChanged();
+  renderMobList();
+});
+$("sp-list").addEventListener("click", (e) => {
+  const li = e.target.closest("li[data-spawn]");
+  if (!li) return;
+  const s = spawns.find((x) => x.id === Number(li.dataset.spawn));
+  selectSpawn(s.id);
+  setCamera({ x: s.x, y: s.y, distance: 45, pitch: 50 });
+});
+// the form edits the selected spawn, or sets up the next one
+function formChanged() {
+  if (selectedSpawn === null) return;
+  const f = spawnForm();
+  if (!f.vnum) return;
+  changeSpawns(() => { const s = spawns.find((x) => x.id === selectedSpawn); Object.assign(s, f); });
+}
+for (const id of ["sp-vnum", "sp-count", "sp-radius", "sp-respawn"]) $(id).addEventListener("change", formChanged);
+$("sp-type").addEventListener("change", () => { renderMobList(); formChanged(); });
+$("sp-delete").addEventListener("click", deleteSpawn);
+$("tab-spawns").addEventListener("click", () => setMainMode("spawns"));
+
 /* ---------- pointer ---------- */
 
 const ray = new THREE.Raycaster();
@@ -715,6 +829,14 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   if (!map || !downAt || e.button !== 0 || gizmo.dragging) return;
   if (Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;      // it was a camera drag
   if (walker.active) return;
+  if (mode === "spawns" && !walker.placing) {
+    const marker = pick(e, spawnLayer.pickables())[0];
+    if (marker) { selectSpawn(marker.object.userData.spawnId); return; }
+    if (selectedSpawn !== null) { selectSpawn(null); return; }      // the first click only drops the selection
+    const hit = pick(e, [terrainGroup])[0];
+    if (hit) addSpawnAt(hit.point.x, hit.point.z);
+    return;
+  }
   if (walker.placing) {
     const hit = pick(e, [terrainGroup])[0];
     if (hit) startWalking(hit.point.x, hit.point.z);
@@ -857,7 +979,7 @@ window.addEventListener("keydown", (e) => {
   else if (e.ctrlKey && k === "c") { e.preventDefault(); copySelection(); }
   else if (e.ctrlKey && k === "v") { e.preventDefault(); pasteAt(lastObjectHit); }
   else if (e.ctrlKey && k === "a" && mode === "objects") { e.preventDefault(); selectMany(objects.map((o) => o.id)); }
-  else if (k === "delete") removeSelected();
+  else if (k === "delete") { if (mode === "spawns") deleteSpawn(); else removeSelected(); }
   else if (k === "1") setMode("translate");
   else if (k === "2") setMode("rotate");
   else if (k === "g") $("snap").checked = !$("snap").checked;
@@ -866,7 +988,7 @@ window.addEventListener("keydown", (e) => {
   else if (k === "r" && placing) { placing.yaw = (placing.yaw + 45) % 360; updateGhost(); }
   else if (placing && (k === "pageup" || k === "pagedown")) { e.preventDefault(); liftPlacing(k === "pageup" ? 0.5 : -0.5); }
   else if (placing && k === "home") liftPlacing(null);
-  else if (k === "escape") { if (placing) stopPlacing(); else select(null); }
+  else if (k === "escape") { if (placing) stopPlacing(); else if (mode === "spawns") selectSpawn(null); else select(null); }
 });
 function undo() { if (!undoStack.length) return; redoStack.push(restore(undoStack.pop())); updateUi(); }
 function redo() { if (!redoStack.length) return; undoStack.push(restore(redoStack.pop())); updateUi(); }
@@ -880,7 +1002,7 @@ $("btn-open").addEventListener("click", chooseAndOpen);
 
 /* ---------- new map dialog ---------- */
 function openNewMap() {
-  if ((dirty || envDirty || (heights && heights.isDirty)) && !confirmDiscard()) return;
+  if ((dirty || envDirty || spawnsDirty || (heights && heights.isDirty)) && !confirmDiscard()) return;
   $("nm-error").textContent = "";
   syncNewForm();
   $("new-map").showModal();
@@ -913,7 +1035,7 @@ $("btn-undo").addEventListener("click", undo);
 $("btn-redo").addEventListener("click", redo);
 $("mode-move").addEventListener("click", () => setMode("translate"));
 $("mode-rotate").addEventListener("click", () => setMode("rotate"));
-window.addEventListener("beforeunload", (e) => { if (dirty || (heights && heights.isDirty)) { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", (e) => { if (dirty || spawnsDirty || (heights && heights.isDirty)) { e.preventDefault(); e.returnValue = ""; } });
 
 /* ---------- start ---------- */
 
@@ -1109,7 +1231,7 @@ async function checkMap() {
     if (waterNoAttr) add("warning", "water_without_attr", `Terén ${c.key}: ${waterNoAttr} buniek vody nemá atribút voda (hráč tam bude chodiť ako po suchu).`);
     if (attrNoWater) add("info", "attr_without_water", `Terén ${c.key}: ${attrNoWater} buniek má atribút voda bez viditeľnej vody.`);
   }
-  if (dirty || heights.isDirty) add("info", "unsaved", "Mapa má neuložené zmeny.");
+  if (dirty || spawnsDirty || heights.isDirty) add("info", "unsaved", "Mapa má neuložené zmeny.");
   return { ok: !issues.some((i) => i.level === "error"), objects: objects.length, issues };
 }
 
@@ -1152,7 +1274,7 @@ const API = {
   status() {
     return map ? {
       map: map.name, dir: map.dir, size: map.size, sizeMeters: [map.size[0] * 256, map.size[1] * 256],
-      objects: objects.length, selected: [...selection], unsaved: { objects: dirty, terrain: heights.isDirty }, mode, tool: brush.tool,
+      objects: objects.length, selected: [...selection], unsaved: { objects: dirty, terrain: heights.isDirty, spawns: spawnsDirty }, mode, tool: brush.tool,
       textures: heights.textures.map((t) => ({ index: t.index, file: t.file, found: Boolean(t.url) })), modelsLoading: layer.pending
     } : { map: null };
   },
@@ -1198,6 +1320,29 @@ const API = {
       }
     });
     return { updated: items.length - missing.length, missing };
+  },
+  list_spawns() { requireMap(); return { spawns: spawns.map((x) => ({ ...x, name: mobLabel(x.vnum) })), unsaved: spawnsDirty }; },
+  async add_spawns({ items }) {
+    requireMap(); await ensureMobs();
+    const added = [];
+    for (const it of items) {
+      const v = { type: it.type || "m", vnum: it.vnum, count: Math.max(1, it.count || 1), radius: Math.max(1, it.radius || 10), respawn: Math.max(1, it.respawn || 120) };
+      const sp = addSpawnAt(it.x, it.y, v);
+      if (sp) added.push(sp.id);
+    }
+    return { added };
+  },
+  update_spawns({ items }) {
+    requireMap();
+    changeSpawns(() => { for (const it of items) { const sp = spawns.find((x) => x.id === it.id); if (sp) for (const k of ["type", "vnum", "x", "y", "radius", "count", "respawn"]) if (it[k] !== undefined) sp[k] = it[k]; } });
+    return { updated: items.length };
+  },
+  delete_spawns({ ids }) {
+    requireMap();
+    const set = new Set(ids), before = spawns.length;
+    changeSpawns(() => { spawns = spawns.filter((x) => !set.has(x.id)); });
+    if (set.has(selectedSpawn)) selectSpawn(null);
+    return { deleted: before - spawns.length };
   },
   delete_objects({ ids }) {
     requireMap();
@@ -1250,7 +1395,7 @@ const API = {
   ground_all_objects() { requireMap(); groundAllObjects(); return { objects: objects.length }; },
   check_map: () => checkMap(),
   export: () => exportMaps(),
-  async save() { requireMap(); await save(); return { message: $("st-msg").textContent, unsaved: { objects: dirty, terrain: heights.isDirty } }; },
+  async save() { requireMap(); await save(); return { message: $("st-msg").textContent, unsaved: { objects: dirty, terrain: heights.isDirty, spawns: spawnsDirty } }; },
   undo() { undo(); return { undo: undoStack.length, redo: redoStack.length }; },
   redo() { redo(); return { undo: undoStack.length, redo: redoStack.length }; },
   camera(params = {}) {

@@ -7,6 +7,7 @@ const { pathToFileURL } = require("url");
 const { terrainKey, parseAreaData, saveObjects, parseTextureSet, saveTerrain } = require("./maplib");
 const { parseEnvironment } = require("./envlib");
 const { levelsFromLight, shadowRaw, shadowDds } = require("./mapgen/shadow");
+const { readSpawns, writeSpawns } = require("./mapgen/spawns");
 
 const { APIX_ROOT, EDITOR_ROOT, PACK_ROOT, getAssetRoots, resolveAsset, getLibrary } = require("./assets");
 const GRANNY_EXPORTER = path.join(APIX_ROOT, "_codex_granny_compiled", "GrannyExporter.exe");
@@ -296,6 +297,45 @@ async function characterParts() {
   for (const [k, game] of Object.entries(CHARACTER)) parts[k] = await convertGr2(game, path.join(CACHE, "pc", k));
   return parts;
 }
+
+/* ---------- spawns: monster list from the server's mob_proto (read only) ---------- */
+
+const SERVER_CONF = path.join(APIX_ROOT, "apix-server", "gamefiles", "conf");
+let mobs = null;
+function listMobs() {
+  if (mobs) return mobs;
+  const names = new Map();
+  try {
+    for (const line of fs.readFileSync(path.join(SERVER_CONF, "mob_names_en.txt"), "latin1").split(/\r?\n/).slice(1)) {
+      const [v, n] = line.split("\t");
+      if (n) names.set(Number(v), n.trim());
+    }
+  } catch { /* names are optional */ }
+  mobs = [];
+  try {
+    const lines = fs.readFileSync(path.join(SERVER_CONF, "mob_proto.txt"), "latin1").split(/\r?\n/);
+    const head = lines[0].split("\t"), col = (k) => head.indexOf(k);
+    const [V, T, R, L, F] = ["VNUM", "TYPE", "RANK", "LEVEL", "FOLDER"].map(col);
+    for (const line of lines.slice(1)) {
+      const c = line.split("\t"), vnum = Number(c[V]);
+      if (!vnum) continue;
+      mobs.push({ vnum, name: names.get(vnum) || c[F] || String(vnum), type: c[T], rank: c[R], level: Number(c[L]) || 0, folder: c[F] });
+    }
+  } catch { /* no server data next to the client */ }
+  return mobs;
+}
+ipcMain.handle("mobs:list", () => listMobs());
+ipcMain.handle("spawns:get", (_, dir) => readSpawns(dir));
+ipcMain.handle("spawns:save", (_, dir, spawns) => {
+  const f = path.join(dir, "_studio", "spawns.json");
+  let backup = null;
+  if (fs.existsSync(f)) {
+    backup = path.join(dir, "_studio_backup", new Date().toISOString().replace(/[:.]/g, "-"), "_studio");
+    fs.mkdirSync(backup, { recursive: true });
+    fs.copyFileSync(f, path.join(backup, "spawns.json"));
+  }
+  return { file: writeSpawns(dir, spawns), count: spawns.length, backup };
+});
 
 /* ---------- asset protocol ---------- */
 

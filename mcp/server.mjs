@@ -111,6 +111,34 @@ server.registerTool("mapstudio_delete_objects", {
   inputSchema: { ids: z.array(z.number().int()).min(1) }
 }, tool((a) => call("delete_objects", a)));
 
+const SPAWN = { type: z.enum(["m", "g", "ga", "npc"]).optional().describe("m = monštrá (count kusov), g = skupina, ga = agresívna skupina, npc = NPC do npc.txt"),
+  vnum: z.number().int().positive(), radius: z.number().positive().optional().describe("polomer v m (predvolene 10)"),
+  count: z.number().int().positive().optional(), respawn: z.number().int().positive().optional().describe("sekundy (predvolene 120)") };
+
+server.registerTool("mapstudio_list_spawns", {
+  title: "Zoznam spawnov",
+  description: `Spawny monštier a NPC mapy (ukladajú sa do <mapa>/_studio/spawns.json, export ich zapíše do regen.txt / npc.txt). ${POS}`,
+  inputSchema: {}
+}, tool(() => call("list_spawns")));
+
+server.registerTool("mapstudio_add_spawns", {
+  title: "Pridať spawny",
+  description: `Pridá spawny (vnum z mob_proto servera). Uloží ich mapstudio_save. ${POS}`,
+  inputSchema: { items: z.array(z.object({ x: z.number(), y: z.number(), ...SPAWN })).min(1) }
+}, tool((a) => call("add_spawns", a)));
+
+server.registerTool("mapstudio_update_spawns", {
+  title: "Upraviť spawny",
+  description: "Zmení polia spawnov podľa id (x, y, type, vnum, radius, count, respawn).",
+  inputSchema: { items: z.array(z.object({ id: z.number().int(), x: z.number().optional(), y: z.number().optional(), ...SPAWN, vnum: z.number().int().positive().optional() })).min(1) }
+}, tool((a) => call("update_spawns", a)));
+
+server.registerTool("mapstudio_delete_spawns", {
+  title: "Zmazať spawny",
+  description: "Zmaže spawny podľa id (dá sa vrátiť cez mapstudio_undo).",
+  inputSchema: { ids: z.array(z.number().int()).min(1) }
+}, tool((a) => call("delete_spawns", a)));
+
 server.registerTool("mapstudio_terrain_height", {
   title: "Výška terénu",
   description: `Výška terénu, hladina vody (null = sucho) a atribúty (1 blok, 2 voda, 4 bez PvP) v bodoch. ${POS}`,

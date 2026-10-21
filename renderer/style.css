@@ -151,3 +151,7 @@ button.link { background: none; border: none; color: var(--accent); padding: 0 4
 .status .msg.warn { color: var(--danger); }
 .walk-hud { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
 .walk-hud.warn { border-color: #e0a040; }
+.lib-list.plain li { grid-template-columns: 1fr auto; }
+.lib-list.plain li .folder { grid-column: 1 / -1; }
+.sp-list { flex: 0 1 auto; max-height: 30%; }
+.spawn-form .field { grid-template-columns: 84px 1fr; }

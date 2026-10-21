@@ -38,6 +38,7 @@
     <div class="tabs" role="tablist">
       <button type="button" role="tab" id="tab-objects" aria-selected="true">Objekty</button>
       <button type="button" role="tab" id="tab-terrain" aria-selected="false" title="Prepnúť (T)">Terén <kbd>T</kbd></button>
+      <button type="button" role="tab" id="tab-spawns" aria-selected="false" title="Spawny monštier a NPC">Spawny</button>
     </div>
     <div class="pane" id="pane-objects">
     <div class="panel-head">
@@ -89,6 +90,21 @@
         <ul class="lib-list" id="cat-list"></ul>
       </div>
     </div>
+    <div class="pane" id="pane-spawns" hidden>
+      <div class="panel-head spawn-form">
+        <div class="field"><label for="sp-type">Druh</label><select id="sp-type"><option value="m">Monštrá</option><option value="g">Skupina</option><option value="ga">Agresívna skupina</option><option value="npc">NPC</option></select></div>
+        <div class="field"><label for="sp-vnum">Vnum</label><input type="number" id="sp-vnum" min="1" placeholder="vyber zo zoznamu"></div>
+        <div class="field"><label for="sp-count">Počet</label><input type="number" id="sp-count" min="1" value="5"></div>
+        <div class="field"><label for="sp-radius">Polomer m</label><input type="number" id="sp-radius" min="1" value="10"></div>
+        <div class="field"><label for="sp-respawn">Respawn s</label><input type="number" id="sp-respawn" min="1" value="120"></div>
+        <p class="tool-hint" id="sp-state">Nový spawn: vyber monštrum a klikni na terén.</p>
+        <button type="button" id="sp-delete" hidden>Zmazať vybraný spawn</button>
+      </div>
+      <div class="panel-head"><input type="search" id="sp-search" placeholder="Hľadať monštrum / NPC (meno, vnum)" aria-label="Hľadať monštrá"></div>
+      <ul class="lib-list plain" id="sp-mobs"><li class="muted">Načítavam monštrá…</li></ul>
+      <div class="panel-head"><h2 id="sp-title">Spawny na mape</h2></div>
+      <ul class="lib-list plain sp-list" id="sp-list"></ul>
+    </div>
   </aside>
 
   <section class="viewport" id="viewport">
@@ -117,6 +133,14 @@
       <dt>[ / ]</dt><dd>menší / väčší štetec</dd>
       <dt>H</dt><dd>kamera späť nad mapu</dd>
       <dt>T</dt><dd>späť na objekty</dd>
+      <dt>Ctrl+Z / Ctrl+Y</dt><dd>späť / znova</dd>
+    </dl>
+    <dl class="keys" id="keys-spawns" hidden>
+      <dt>Ľavý klik</dt><dd>na terén: nový spawn, na značku: výber</dd>
+      <dt>Del</dt><dd>zmazať vybraný spawn</dd>
+      <dt>Esc</dt><dd>zrušiť výber</dd>
+      <dt>W A S D</dt><dd>let kamery</dd>
+      <dt>Ctrl+S</dt><dd>uložiť (_studio/spawns.json)</dd>
       <dt>Ctrl+Z / Ctrl+Y</dt><dd>späť / znova</dd>
     </dl>
     <dl class="keys" id="keys-objects">

@@ -16,6 +16,7 @@ const zlib = require("zlib");
 const { compress } = require("./lzo");
 const { objectCells } = require("./collision");
 const { litLevels, shadowRaw, shadowDds } = require("./shadow");
+const { readSpawns, regenRows } = require("./spawns");
 const { parseAreaData } = require("../maplib");
 
 const TERRAIN = 25600;                 // world units per terrain (CellScale 200 × 128 cells)
@@ -138,7 +139,16 @@ function exportGame(mapDir, { index, base, out, town, gotoAlias, editorRoot, obj
   if (townCell & 129) throw new Error(`town ${town} is blocked in server_attr (flags ${townCell}); pick another --town`);
   put(`${srv}/server_attr`, attr.data);
   put("server_attr_preview.png", attrPreview(attr.grid, ...attr.gridSize));
-  for (const f of ["regen.txt", "npc.txt", "boss.txt", "stone.txt"]) put(`${srv}/${f}`, Buffer.alloc(0));
+  // spawns placed in Map Studio (<map>/_studio/spawns.json); a spawn centre on a blocked cell never spawns
+  const spawns = readSpawns(mapDir), rows = regenRows(spawns), warnings = [];
+  for (const sp of spawns) {
+    const v = attr.grid[Math.floor(sp.y * 2) * attr.gridSize[0] + Math.floor(sp.x * 2)];
+    if (v & 129) warnings.push(`spawn ${sp.type} ${sp.vnum} at ${Math.round(sp.x)},${Math.round(sp.y)} stands on a blocked cell (flags ${v})`);
+    else if (sp.type !== "npc" && !(v & 4) && Math.hypot(sp.x - town[0], sp.y - town[1]) < sp.radius + 10) warnings.push(`monsters ${sp.vnum} spawn within 10 m of the town`);
+  }
+  put(`${srv}/regen.txt`, Buffer.from(rows.regen, "latin1"));
+  put(`${srv}/npc.txt`, Buffer.from(rows.npc, "latin1"));
+  for (const f of ["boss.txt", "stone.txt"]) put(`${srv}/${f}`, Buffer.alloc(0));
 
   /* client pack apix_<name>: map folder (lower-case names like the shipped packs), texture set, atlas */
   const pack = `client/${name}`;
@@ -172,6 +182,7 @@ function exportGame(mapDir, { index, base, out, town, gotoAlias, editorRoot, obj
   const manifest = {
     map: name, index, basePosition: base, mapSize: setting.size, town, environment: setting.environment,
     shadows,
+    spawns: { regen: spawns.filter((x) => x.type !== "npc").length, npc: spawns.filter((x) => x.type === "npc").length, warnings },
     serverAttr: { sectors: attr.sectors, cells: attr.cells, objectCollision: attr.collision || "off" },
     deploy: {
       server: [
