@@ -655,7 +655,9 @@ async function checkMap() {
     if (used.size > 12) add("warning", "many_textures", `Terén ${c.key} používa ${used.size} textúr; Map Studio zobrazí len 12 najčastejších.`);
     let waterNoAttr = 0, attrNoWater = 0;
     for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
-      const isWet = c.water.idx[y * 128 + x] !== 255;
+      // only water that is actually above the ground counts; water hidden under land is harmless
+      const lvl = c.water.idx[y * 128 + x];
+      const isWet = lvl !== 255 && c.water.levels[lvl] > heights.raw(c.tx * 128 + x, c.ty * 128 + y);
       const a = c.attr[(y * 2) * 256 + x * 2] & 2;
       if (isWet && !a) waterNoAttr++;
       if (!isWet && a) attrNoWater++;

@@ -75,6 +75,12 @@ server.registerTool("mapstudio_open_map", {
   inputSchema: { dir: z.string() }
 }, tool((a) => call("open_map", a)));
 
+server.registerTool("mapstudio_new_map", {
+  title: "Nová mapa",
+  description: "Vytvorí v koreni WorldEditora novú rovnú mapu (výška 163,8 m = 32767, jedna základná textúra, bez vody) a otvorí ju. sizeX/sizeY v terénoch po 256 m.",
+  inputSchema: { name: z.string(), sizeX: z.number().int().min(1).max(16).optional(), sizeY: z.number().int().min(1).max(16).optional(), baseTexture: z.string().optional() }
+}, tool((a) => call("new_map", a)));
+
 server.registerTool("mapstudio_list_objects", {
   title: "Zoznam objektov",
   description: `Objekty na mape (id, crc, názov, typ, x, y, z, yaw, výška terénu pod nimi). Filter podľa okolia, CRC alebo názvu. ${POS}`,

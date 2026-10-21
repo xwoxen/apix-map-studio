@@ -359,7 +359,25 @@ async function callRenderer(method, params) {
   return win.webContents.executeJavaScript(js, true);
 }
 
+// New flat map (raw height 32767, one base texture, no water) written by mapgen, then opened.
+function createBlankMap({ name, sizeX = 1, sizeY = 1, baseTexture = "d:/ymir work/terrainmaps/a/grass/grass 01.dds" }) {
+  if (!/^[a-z0-9_]+$/i.test(String(name || ""))) throw new Error("Názov mapy: len písmená, čísla a _");
+  const dir = path.join(EDITOR_ROOT, name);
+  if (fs.existsSync(dir)) throw new Error(`Mapa ${name} už existuje`);
+  const { generate } = require("./mapgen/mapgen.js");
+  generate({
+    name, sizeX, sizeY,
+    height: () => 32767,
+    texture: () => 1,
+    textures: [{ file: baseTexture }],
+    water: null,
+    objects: () => []
+  }, EDITOR_ROOT, name);
+  return dir;
+}
+
 async function bridgeCall(method, params) {
+  if (method === "new_map") return callRenderer("open_map", { dir: createBlankMap(params) });
   if (method === "screenshot") {
     const r = await callRenderer("screenshot", params);                     // renderer prepares the view and returns a PNG
     fs.mkdirSync(SHOTS, { recursive: true });
