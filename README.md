@@ -103,7 +103,7 @@ Kamera lieta voľne a terén neovplyvňuje jej pohyb: **W/S** let tam, kam sa po
 **E / medzerník** hore, **Q / C** dole, **Shift** 3,5× rýchlejšie. **Pravé tlačidlo** = rozhliadanie
 na mieste, **stredné** = posun, **koliesko** = let dopredu/dozadu. Rýchlosť sa riadi výškou nad terénom
 (pri zemi pomaly a presne). Ľavé tlačidlo je len na prácu: výber, obdĺžnik, úchyty, štetce.
-Úchyty posun/rotácia: **1 / 2**.
+Úchyty posun/rotácia: **1 / 2**. Stratil si sa (v nebi, pod terénom)? **H** alebo tlačidlo „Mapa“ vráti kameru nad celú mapu.
 
 ### Postava (kláves P alebo tlačidlo „Postava“)
 

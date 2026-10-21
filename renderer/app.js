@@ -95,6 +95,14 @@ function updateUi() {
 
 /* ---------- map loading ---------- */
 
+// overview of the whole map from the south, also the way back after flying off into the sky (H)
+function resetView() {
+  if (!map) return;
+  const w = map.size[0] * 256, d = map.size[1] * 256;
+  camera.position.set(w / 2, heights.at(w / 2, d / 2) + w * 0.55, d / 2 + w * 0.75);
+  fly.lookAt(new THREE.Vector3(w / 2, heights.at(w / 2, d / 2), d / 2));
+}
+
 async function openMap(dir) {
   if (!dir) return;
   setMsg("Načítavam mapu…");
@@ -113,9 +121,8 @@ async function openMap(dir) {
   for (const o of objects) layer.add(o);
   undoStack.length = redoStack.length = 0; dirty = false;
   select(null);
-  const w = map.size[0] * 256, d = map.size[1] * 256;
-  camera.position.set(w / 2, heights.at(w / 2, d / 2) + w * 0.55, d / 2 + w * 0.75);
-  fly.lookAt(new THREE.Vector3(w / 2, heights.at(w / 2, d / 2), d / 2));
+  resetView();
+  const w = map.size[0] * 256;
   camera.far = Math.max(6000, w * 6); camera.updateProjectionMatrix();
   environment.apply(map.environment, view);
   envName = map.environment ? map.environment.name : ""; envDirty = false;
@@ -817,6 +824,7 @@ walker.onChange = () => {
   $("noclip").checked = walker.noclip;
   $("btn-walk").setAttribute("aria-pressed", String(walker.active || walker.placing));
 };
+$("btn-home").addEventListener("click", () => { if (!walker.active) resetView(); });
 $("btn-walk").addEventListener("click", () => { if (walker.active || walker.placing) { walker.active ? stopWalking() : walker.stop(); } else beginCharacter(); });
 $("noclip").addEventListener("change", (e) => { setNoclip(e.target.checked); e.target.blur(); });
 const moveClock = new THREE.Clock();
@@ -854,6 +862,7 @@ window.addEventListener("keydown", (e) => {
   else if (k === "2") setMode("rotate");
   else if (k === "g") $("snap").checked = !$("snap").checked;
   else if (k === "f") focusSelected();
+  else if (k === "h") { resetView(); setMsg("Kamera späť nad mapou."); }
   else if (k === "r" && placing) { placing.yaw = (placing.yaw + 45) % 360; updateGhost(); }
   else if (placing && (k === "pageup" || k === "pagedown")) { e.preventDefault(); liftPlacing(k === "pageup" ? 0.5 : -0.5); }
   else if (placing && k === "home") liftPlacing(null);
