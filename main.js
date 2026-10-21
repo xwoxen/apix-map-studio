@@ -350,6 +350,37 @@ function modelFor(crc) {
   return job;
 }
 
+/* ---------- walking character (play mode) ---------- */
+
+// A warrior with hair and the general wait/walk/run motions, converted like map models into model-cache/pc/<part>.
+const CHARACTER = {
+  body: "d:/ymir work/pc/warrior/warrior_novice.gr2",
+  hair: "d:/ymir work/pc/warrior/hair/hair_1_1.gr2",
+  wait: "d:/ymir work/pc/warrior/general/wait.gr2",
+  walk: "d:/ymir work/pc/warrior/general/walk.gr2",
+  run: "d:/ymir work/pc/warrior/general/run.gr2"
+};
+function convertGr2(game, out) {
+  const fbx = path.join(out, "m.fbx");
+  if (fs.existsSync(fbx)) return Promise.resolve(assetUrl(fbx));
+  const src = resolveAsset(game);
+  if (!src) return Promise.resolve(null);
+  return limitConversions(() => new Promise((resolve) => {
+    fs.mkdirSync(out, { recursive: true });
+    fs.copyFileSync(src, path.join(out, "m.gr2"));
+    execFile(GRANNY_EXPORTER, [path.join(out, "m.gr2")], { cwd: path.dirname(GRANNY_EXPORTER), timeout: 60000, windowsHide: true }, async () => {
+      if (!fs.existsSync(fbx)) return resolve(null);
+      await recoverTextures(fbx, src, out);
+      resolve(assetUrl(fbx));
+    });
+  }));
+}
+async function characterParts() {
+  const parts = {};
+  for (const [k, game] of Object.entries(CHARACTER)) parts[k] = await convertGr2(game, path.join(CACHE, "pc", k));
+  return parts;
+}
+
 /* ---------- asset protocol ---------- */
 
 // Path-shaped URLs so loaders can resolve relative files (an FBX finds its PNG textures next to it).
@@ -446,6 +477,7 @@ function writeExport(dir, files) {
 }
 ipcMain.handle("library:list", () => [...getLibrary().values()].map(({ crc, name, type, folder, model }) => ({ crc, name, type, folder, model })));
 ipcMain.handle("model:get", (_, crc) => modelFor(crc));
+ipcMain.handle("character:get", () => characterParts());
 ipcMain.handle("thumb:get", (_, crc) => (fs.existsSync(thumbFile(crc)) ? assetUrl(thumbFile(crc)) : null));
 ipcMain.handle("thumb:save", (_, crc, dataUrl) => {
   const png = Buffer.from(String(dataUrl).replace(/^data:image\/png;base64,/, ""), "base64");

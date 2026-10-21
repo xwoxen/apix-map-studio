@@ -140,7 +140,7 @@ function bakeSkinned(model) {
 }
 
 // Textures always live next to the cached m.fbx under their bare file name, whatever path the FBX stored.
-function loadFbx(url) {
+export function loadFbx(url) {
   const base = url.slice(0, url.lastIndexOf("/") + 1);
   const manager = new THREE.LoadingManager();
   manager.setURLModifier((u) => (/\.(png|dds|tga|jpg)$/i.test(u) && !u.startsWith(base)

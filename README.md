@@ -101,6 +101,15 @@ na mieste, **stredné** = posun, **koliesko** = let dopredu/dozadu. Rýchlosť s
 (pri zemi pomaly a presne). Ľavé tlačidlo je len na prácu: výber, obdĺžnik, úchyty, štetce.
 Úchyty posun/rotácia: **1 / 2**.
 
+### Postava (kláves P alebo tlačidlo „Postava“)
+
+Klikni na terén a postaví sa tam bojovník (model a animácie státia, chôdze a behu z `pc/warrior`,
+prevedené do `model-cachepc`). **WASD** beh, **Shift** chôdza, **pravé tlačidlo** otáča kameru,
+**koliesko** približuje, **P** postaví postavu inam, **Esc** späť do editora.
+Blokované miesta a voda (atribúty mapy) zastavia postavu ako na serveri; **Noclip (N)** cez ne pustí
+a postava chodí po hladine. Objekty zatiaľ nie sú pevné (kolízne tvary objektov sa nenačítavajú).
+Test: `test/walk-demo.js` na mape `apix_pvp_arena`.
+
 ## Súradnice
 
 Scéna je v metroch, os Y hore: `scéna = (x/100, z/100, −y/100)` z Metin2 cm (y v AreaData je záporné).

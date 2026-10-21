@@ -6,6 +6,7 @@ import { TOOLS, paint, sample, attrMask, BrushCursor } from "./brush.js";
 import { ObjectLayer, template, toScene, fromScene } from "./objects.js";
 import { thumbnail } from "./thumbs.js";
 import { Environment } from "./env.js";
+import { Walker } from "./walker.js";
 
 const $ = (id) => document.getElementById(id);
 const deg = THREE.MathUtils.radToDeg, rad = THREE.MathUtils.degToRad;
@@ -30,6 +31,7 @@ let envName = "", envDirty = false, envList = null;
 
 const fly = new FlyControls(camera, renderer.domElement, (x, z) => (heights ? heights.at(x, z) : 0));
 const gizmo = new TransformControls(camera, renderer.domElement);
+const walker = new Walker(scene, camera, renderer.domElement, () => heights);
 gizmo.setSpace("world");
 scene.add(gizmo.getHelper ? gizmo.getHelper() : gizmo);
 
@@ -638,6 +640,7 @@ renderer.domElement.addEventListener("pointermove", (e) => {
     const m = fromScene(hit.point);
     $("st-cursor").textContent = `x ${Math.round(m.x)} · y ${Math.round(m.y)} · výška ${(hit.point.y).toFixed(1)} m`;
     lastObjectHit = hit.point.clone();
+    if (walker.placing) walker.setPosition(hit.point.x, hit.point.z);
     if (placing) { placing.ghost.position.set(hit.point.x, heights.at(hit.point.x, hit.point.z), hit.point.z); placing.ghost.rotation.y = rad(placing.yaw); }
     if (mode === "terrain") { cursor.update(heights, hit.point.x, hit.point.z, brush.radius); lastHit = hit.point; }
   } else if (mode === "terrain") cursor.line.visible = false;
@@ -645,6 +648,7 @@ renderer.domElement.addEventListener("pointermove", (e) => {
 });
 renderer.domElement.addEventListener("pointerdown", (e) => {
   downAt = e.button === 0 ? [e.clientX, e.clientY] : null;
+  if (walker.active || walker.placing) return;
   if (mode !== "terrain" || e.button !== 0 || !map) return;
   const hit = pick(e, [terrainGroup])[0];
   if (!hit) return;
@@ -666,6 +670,12 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   if (mode === "terrain") return;
   if (!map || !downAt || e.button !== 0 || gizmo.dragging) return;
   if (Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;      // it was a camera drag
+  if (walker.active) return;
+  if (walker.placing) {
+    const hit = pick(e, [terrainGroup])[0];
+    if (hit) startWalking(hit.point.x, hit.point.z);
+    return;
+  }
   if (placing && placing.prefab) {
     const hit = pick(e, [terrainGroup])[0];
     if (!hit) return;
@@ -695,7 +705,7 @@ renderer.domElement.addEventListener("pointerup", (e) => {
 // moving still selects through the click handler; the gizmo keeps its own drags.
 let marquee = null;
 viewport.addEventListener("pointerdown", (e) => {
-  if (!map || mode !== "objects" || placing || e.button !== 0 || gizmo.axis) return;
+  if (!map || mode !== "objects" || placing || walker.active || walker.placing || e.button !== 0 || gizmo.axis) return;
   marquee = { x0: e.clientX, y0: e.clientY, el: null, moved: false, add: e.shiftKey };
 }, true);
 window.addEventListener("pointermove", (e) => {
@@ -730,14 +740,59 @@ window.addEventListener("pointerup", (e) => {
 
 /* Noclip flight (renderer/fly.js): keys are routed here so typing in inputs never moves the camera. */
 let shiftHeld = false;
-window.addEventListener("keyup", (e) => { fly.keyUp(e.key.toLowerCase()); if (e.key === "Shift") shiftHeld = false; });
-window.addEventListener("blur", () => { fly.clear(); shiftHeld = false; });
+window.addEventListener("keyup", (e) => { fly.keyUp(e.key.toLowerCase()); walker.keyUp(e.key.toLowerCase()); if (e.key === "Shift") shiftHeld = false; });
+window.addEventListener("blur", () => { fly.clear(); walker.held.clear(); shiftHeld = false; });
+
+/* ---------- play mode: walk the map with a character (renderer/walker.js) ---------- */
+
+async function beginCharacter() {
+  if (!map) return;
+  stopPlacing(); select(null);
+  if (mode === "terrain") setMainMode("objects");
+  setMsg("Načítavam postavu…");
+  try { await walker.beginPlacing(); } catch (e) { walker.stop(); setMsg(String(e.message || e), true); return; }
+  setMsg("Klikni na terén, kam chceš postaviť postavu.");
+}
+function startWalking(x, z) {
+  walker.start(x, z);
+  fly.enabled = false; fly.clear();
+  setMsg("Chôdza: WASD, Shift pomaly, N noclip, P preložiť, Esc späť do editora.");
+}
+function stopWalking() {
+  const target = walker.root.position.clone().add(new THREE.Vector3(0, 1.6, 0));
+  walker.stop();
+  fly.enabled = true;
+  fly.lookAt(target);
+  setMsg("Späť v editore.");
+}
+function setNoclip(on) {
+  walker.noclip = on;
+  walker.onChange();
+}
+walker.onChange = () => {
+  $("walk-hud").hidden = !(walker.active || walker.placing);
+  $("walk-text").textContent = walker.placing ? "Klikni na terén, kam postavíš postavu · Esc = zrušiť"
+    : walker.blocked ? "Sem sa nedá prejsť (blokované / voda) · N = noclip" : "WASD chôdza · Shift pomaly · pravé tlačidlo kamera · koliesko priblíženie · Esc koniec";
+  $("walk-hud").classList.toggle("warn", walker.active && walker.blocked);
+  $("noclip").checked = walker.noclip;
+  $("btn-walk").setAttribute("aria-pressed", String(walker.active || walker.placing));
+};
+$("btn-walk").addEventListener("click", () => { if (walker.active || walker.placing) { walker.active ? stopWalking() : walker.stop(); } else beginCharacter(); });
+$("noclip").addEventListener("change", (e) => { setNoclip(e.target.checked); e.target.blur(); });
 const moveClock = new THREE.Clock();
 
 window.addEventListener("keydown", (e) => {
   if (e.target.matches && e.target.matches("input, select, textarea")) return;
   const k = e.key.toLowerCase();
   if (e.key === "Shift") shiftHeld = true;
+  if ((walker.active || walker.placing) && !e.ctrlKey) {
+    if (k === "escape") { walker.active ? stopWalking() : (walker.stop(), setMsg("")); }
+    else if (k === "n" && walker.active) setNoclip(!walker.noclip);
+    else if (k === "p") beginCharacter();
+    else if (walker.active && !e.ctrlKey && walker.keyDown(k)) e.preventDefault();
+    return;
+  }
+  if (k === "p" && !e.ctrlKey && map) { beginCharacter(); return; }
   if (!e.ctrlKey && !e.altKey && !e.metaKey && map && fly.keyDown(k)) { e.preventDefault(); return; }
   if (k === "[" || k === "]") { const r = $("radius"); r.value = Number(r.value) + (k === "]" ? 2 : -2); r.dispatchEvent(new Event("input")); return; }
   if (k === "t" && !e.ctrlKey) { setMainMode(mode === "terrain" ? "objects" : "terrain"); return; }
@@ -1134,6 +1189,8 @@ window.__studio = {
     const p = toScene(o).add(new THREE.Vector3(0, 1, 0)).project(camera);
     return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height, visible: p.z < 1 && Math.abs(p.x) < 1 && Math.abs(p.y) < 1 };
   },
+  walker,
+  startWalking, stopWalking,
   async addTexture(game) { const e = heights.addTexture(game, await window.studio.textureUrl(game)); brush.texture = e.index; renderPalette(); return e.index; },
   stroke(points, opts = {}) {
     Object.assign(brush, opts);
@@ -1146,7 +1203,8 @@ window.__studio = {
 };
 updateUi();
 renderer.setAnimationLoop(() => {
-  fly.update(Math.min(0.1, moveClock.getDelta()), shiftHeld);
+  const dt = Math.min(0.1, moveClock.getDelta());
+  if (walker.active) walker.update(dt); else { walker.update(dt); fly.update(dt, shiftHeld); }
   environment.follow(camera);
   renderer.render(scene, camera);
 });

@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("studio", {
   setEnvironment: (dir, name) => ipcRenderer.invoke("env:set", dir, name),
   library: () => ipcRenderer.invoke("library:list"),
   model: (crc) => ipcRenderer.invoke("model:get", crc),
+  character: () => ipcRenderer.invoke("character:get"),
   thumb: (crc) => ipcRenderer.invoke("thumb:get", crc),
   saveThumb: (crc, dataUrl) => ipcRenderer.invoke("thumb:save", crc, dataUrl),
   reveal: (file) => ipcRenderer.invoke("shell:reveal", file),

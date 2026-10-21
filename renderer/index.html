@@ -22,6 +22,8 @@
   </div>
   <label class="check" title="Objekt sa po posune položí na terén (G)"><input type="checkbox" id="snap" checked> Na terén <kbd>G</kbd></label>
   <span class="sep"></span>
+  <button type="button" id="btn-walk" aria-pressed="false" title="Položiť postavu a prechádzať sa (P)">Postava <kbd>P</kbd></button>
+  <span class="sep"></span>
   <button type="button" id="btn-check" title="Kontrola pred nasadením">Kontrola</button>
   <button type="button" id="btn-export" title="Minimapa a atlas vykreslené zhora">Export</button>
   <span class="sep"></span>
@@ -94,6 +96,8 @@
       <p>Vyber priečinok mapy z WorldEditora alebo z generátora, napríklad <code>apix_gen_ostrov</code>.</p>
       <button type="button" class="primary" id="btn-open-2">Otvoriť mapu</button>
     </div>
+    <div class="overlay walk-hud" id="walk-hud" hidden><span id="walk-text"></span>
+      <label class="check" title="Prechádzať cez blokované miesta a vodu (N)"><input type="checkbox" id="noclip"> Noclip <kbd>N</kbd></label></div>
     <div class="overlay" id="placing" hidden>Pokladáš: <b id="placing-name"></b> · klik = položiť · R = otočiť o 45° · Esc = koniec</div>
   </section>
 
@@ -126,6 +130,7 @@
       <dt>Ctrl+D</dt><dd>duplikovať</dd>
       <dt>F</dt><dd>zamerať vybraný</dd>
       <dt>T</dt><dd>prepnúť na terén</dd>
+      <dt>P</dt><dd>postava: polož a prechádzaj sa (N noclip)</dd>
       <dt>Ctrl+Z / Ctrl+Y</dt><dd>späť / znova</dd>
     </dl>
   </aside>

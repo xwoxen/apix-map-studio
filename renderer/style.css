@@ -149,3 +149,5 @@ button.link { background: none; border: none; color: var(--accent); padding: 0 4
 .status { display: flex; gap: 18px; padding: 5px 12px; background: var(--panel); border-top: 1px solid var(--line); color: var(--muted); font-family: var(--mono); font-size: 12px; }
 .status .msg { margin-left: auto; color: var(--fg); font-family: var(--font); }
 .status .msg.warn { color: var(--danger); }
+.walk-hud { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+.walk-hud.warn { border-color: #e0a040; }
