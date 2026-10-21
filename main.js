@@ -4,7 +4,7 @@ const path = require("path");
 const fs = require("fs");
 const { execFile } = require("child_process");
 const { pathToFileURL } = require("url");
-const { terrainKey, parseAreaData, saveObjects } = require("./maplib");
+const { terrainKey, parseAreaData, saveObjects, parseTextureSet, saveTerrain } = require("./maplib");
 
 const APIX_ROOT = "C:\\Users\\micha\\Documents\\APIX";
 const EDITOR_ROOT = "C:\\Users\\micha\\Documents\\we_remix_v59__20260716-1745";
@@ -92,16 +92,55 @@ function getLibrary() {
 
 function readText(file) { return fs.existsSync(file) ? fs.readFileSync(file, "latin1") : ""; }
 
+function textureUrl(gameOrFile) {
+  const resolved = resolveAsset(gameOrFile) || (fs.existsSync(gameOrFile) ? gameOrFile : null);
+  return resolved ? assetUrl(resolved) : null;
+}
+
 function readTextureSet(file) {
-  const text = readText(file);
-  const textures = [];
-  const re = /Start Texture(\d+)\s+"([^"]*)"\s+([\d.\-]+)\s+([\d.\-]+)/g;
-  let m;
-  while ((m = re.exec(text))) {
-    const resolved = resolveAsset(m[2]) || (fs.existsSync(m[2]) ? m[2] : null);
-    textures.push({ index: Number(m[1]), file: m[2], uScale: Number(m[3]), vScale: Number(m[4]), url: resolved ? assetUrl(resolved) : null });
-  }
-  return textures;
+  return parseTextureSet(readText(file)).map((e) => ({ ...e, url: textureUrl(e.file) }));
+}
+
+/* ---------- terrain texture catalogue and previews ---------- */
+
+let terrainTextures = null;
+function listTerrainTextures() {
+  if (terrainTextures) return terrainTextures;
+  const seen = new Map();
+  const visit = (dir, rel) => {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const r = rel + "/" + e.name;
+      if (e.isDirectory()) visit(path.join(dir, e.name), r);
+      else if (/\.dds$/i.test(e.name) && !seen.has(r.toLowerCase())) {
+        seen.set(r.toLowerCase(), { game: "d:/ymir work/terrainmaps" + r.toLowerCase(), name: e.name.replace(/\.dds$/i, ""), folder: rel.slice(1) });
+      }
+    }
+  };
+  for (const root of getAssetRoots()) visit(path.join(root, "ymir work", "terrainmaps"), "");
+  terrainTextures = [...seen.values()].sort((a, b) => (a.folder + a.name).localeCompare(b.folder + b.name));
+  return terrainTextures;
+}
+
+const PREVIEWS = path.join(app.getPath("userData"), "texture-previews");
+function texturePreview(game) {
+  const src = resolveAsset(game) || (fs.existsSync(game) ? game : null);
+  if (!src) return Promise.resolve(null);
+  const name = require("crypto").createHash("md5").update(src.toLowerCase()).digest("hex") + ".png";
+  const dest = path.join(PREVIEWS, name);
+  if (fs.existsSync(dest)) return Promise.resolve(assetUrl(dest));
+  if (!fs.existsSync(TEXCONV)) return Promise.resolve(null);
+  fs.mkdirSync(PREVIEWS, { recursive: true });
+  const tmp = fs.mkdtempSync(path.join(PREVIEWS, "tx-"));
+  return new Promise((resolve) => {
+    execFile(TEXCONV, ["-nologo", "-y", "-ft", "png", "-w", "96", "-h", "96", "-m", "1", "-o", tmp, src], { windowsHide: true, timeout: 30000 }, () => {
+      const made = fs.existsSync(tmp) && fs.readdirSync(tmp).find((f) => /\.png$/i.test(f));
+      if (made) fs.renameSync(path.join(tmp, made), dest);
+      fs.rmSync(tmp, { recursive: true, force: true });
+      resolve(made ? assetUrl(dest) : null);
+    });
+  });
 }
 
 function openMap(dir) {
@@ -110,7 +149,8 @@ function openMap(dir) {
   const size = (setting.match(/MapSize\s+(\d+)\s+(\d+)/) || [0, 1, 1]).slice(1).map(Number);
   const tsRel = (setting.match(/TextureSet\s+(.+)/) || [0, ""])[1].trim();
   const editorRoot = path.dirname(dir);
-  const textures = tsRel ? readTextureSet(path.join(editorRoot, tsRel)) : [];
+  const textureSetFile = tsRel ? path.join(editorRoot, tsRel) : path.join(editorRoot, "textureset", path.basename(dir) + ".txt");
+  const textures = readTextureSet(textureSetFile);
   const terrains = [];
   let objects = [];
   for (let ty = 0; ty < size[1]; ty++) for (let tx = 0; tx < size[0]; tx++) {
@@ -121,7 +161,7 @@ function openMap(dir) {
     terrains.push({ key, tx, ty, height: read("height.raw"), tile: read("tile.raw"), water: read("water.wtr"), attr: read("attr.atr") });
     objects = objects.concat(parseAreaData(readText(path.join(tdir, "AreaData.txt")), key));
   }
-  return { dir, name: path.basename(dir), size, textures, terrains, objects };
+  return { dir, name: path.basename(dir), size, textures, textureSetFile, terrains, objects };
 }
 
 /* ---------- models: GR2 -> FBX cache ---------- */
@@ -233,7 +273,7 @@ function modelFor(crc) {
 function assetUrl(file) { return "apix://file/" + path.resolve(file).split(path.sep).map(encodeURIComponent).join("/"); }
 function allowed(file) {
   const f = path.resolve(file).toLowerCase();
-  return [CACHE, THUMBS, EDITOR_ROOT, PACK_ROOT, "D:\\ymir work"].some((r) => f.startsWith(path.resolve(r).toLowerCase()));
+  return [CACHE, THUMBS, PREVIEWS, EDITOR_ROOT, PACK_ROOT, "D:\\ymir work"].some((r) => f.startsWith(path.resolve(r).toLowerCase()));
 }
 
 /* ---------- window & IPC ---------- */
@@ -259,6 +299,10 @@ ipcMain.handle("map:choose", async () => {
 });
 ipcMain.handle("map:open", (_, dir) => openMap(dir));
 ipcMain.handle("map:save", (_, dir, size, objects) => saveObjects(dir, size, objects));
+ipcMain.handle("terrain:save", (_, dir, payload) => saveTerrain(dir, payload));
+ipcMain.handle("textures:list", () => listTerrainTextures());
+ipcMain.handle("texture:preview", (_, game) => texturePreview(game));
+ipcMain.handle("texture:url", (_, game) => textureUrl(game));
 ipcMain.handle("library:list", () => [...getLibrary().values()].map(({ crc, name, type, folder, model }) => ({ crc, name, type, folder, model })));
 ipcMain.handle("model:get", (_, crc) => modelFor(crc));
 ipcMain.handle("thumb:get", (_, crc) => (fs.existsSync(thumbFile(crc)) ? assetUrl(thumbFile(crc)) : null));
@@ -285,6 +329,12 @@ app.whenReady().then(() => {
     if (open) win.webContents.send("map:auto-open", open);
     if (shot) {
       ipcMain.once("app:ready-for-shot", () => setTimeout(async () => {
+        const script = argValue("--eval");
+        if (script) {
+          try { console.log("[eval]", JSON.stringify(await win.webContents.executeJavaScript(fs.readFileSync(script, "utf8")))); }
+          catch (e) { console.log("[eval] failed:", e.message); }
+          await new Promise((r) => setTimeout(r, 1500));
+        }
         const image = await win.webContents.capturePage();
         fs.writeFileSync(shot, image.toPNG());
         app.quit();

@@ -93,6 +93,32 @@ input[type=search], .inspector input[type=number] {
 .keys dt { font-family: var(--mono); color: var(--fg); }
 .keys dd { margin: 0; color: var(--muted); }
 
+.tabs { display: flex; border-bottom: 1px solid var(--line); }
+.tabs button { flex: 1; border: none; border-radius: 0; background: transparent; color: var(--muted); padding: 9px 8px; font-weight: 600; border-bottom: 2px solid transparent; }
+.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.pane { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.terrain-pane { position: relative; overflow: auto; }
+.tools { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+.tools button[aria-pressed="true"] { background: var(--sel); border-color: var(--sel); }
+.tool-hint { margin: 0; color: var(--muted); font-size: 12px; min-height: 1.2em; }
+.slider { display: grid; grid-template-columns: 56px 1fr 44px; align-items: center; gap: 8px; }
+.slider label { color: var(--muted); }
+.slider output { font-family: var(--mono); font-size: 12px; text-align: right; }
+.slider input { accent-color: var(--accent); width: 100%; }
+.palette { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.swatch { display: flex; flex-direction: column; gap: 3px; padding: 4px; align-items: stretch; min-width: 0; }
+.swatch img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 3px; background: var(--bg); }
+.swatch img:not([src]) { content: url("data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEAAAAALAAAAAABAAEAAAI="); }
+.swatch span { font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.swatch[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.swatch[aria-pressed="true"] span { color: var(--fg); }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.dot.block { background: #e61e28; } .dot.water { background: #2850f0; } .dot.banpk { background: #28d228; }
+.terrain-pane .check { padding: 2px 0; }
+.catalogue { position: absolute; inset: 0; background: var(--panel); display: flex; flex-direction: column; z-index: 2; }
+.cat-head { display: flex; justify-content: space-between; align-items: center; }
+.cat-head button { padding: 2px 8px; }
+
 .status { display: flex; gap: 18px; padding: 5px 12px; background: var(--panel); border-top: 1px solid var(--line); color: var(--muted); font-family: var(--mono); font-size: 12px; }
 .status .msg { margin-left: auto; color: var(--fg); font-family: var(--font); }
 .status .msg.warn { color: var(--danger); }

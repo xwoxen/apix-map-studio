@@ -28,8 +28,12 @@
 
 <main class="layout">
   <aside class="panel library">
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" id="tab-objects" aria-selected="true">Objekty</button>
+      <button type="button" role="tab" id="tab-terrain" aria-selected="false" title="Prepnúť (T)">Terén <kbd>T</kbd></button>
+    </div>
+    <div class="pane" id="pane-objects">
     <div class="panel-head">
-      <h2>Objekty</h2>
       <input type="search" id="lib-search" placeholder="Hľadať (napr. pine, wall, gate)" aria-label="Hľadať objekty">
       <div class="chips" id="lib-types"></div>
     </div>
@@ -39,6 +43,45 @@
       <div class="pv-text"><b id="pv-name"></b><span id="pv-meta"></span></div>
     </div>
     <p class="hint" id="lib-hint">Klikni na objekt a potom na terén, kam ho chceš položiť. Shift + klik pokladá viac kusov, Esc ukončí.</p>
+    </div>
+
+    <div class="pane terrain-pane" id="pane-terrain" hidden>
+      <div class="panel-head">
+        <h2>Nástroj</h2>
+        <div class="tools" id="tools"></div>
+        <p class="tool-hint" id="tool-hint"></p>
+      </div>
+      <div class="panel-head">
+        <div class="slider"><label for="radius">Veľkosť</label><input type="range" id="radius" min="1" max="60" value="8"><output id="radius-val">8 m</output></div>
+        <div class="slider" id="sec-strength"><label for="strength">Sila</label><input type="range" id="strength" min="1" max="10" value="5"><output id="strength-val">5</output></div>
+      </div>
+      <div class="panel-head" id="sec-texture" hidden>
+        <h2>Textúry mapy</h2>
+        <div class="palette" id="palette"></div>
+        <button type="button" id="btn-add-texture">Pridať textúru…</button>
+      </div>
+      <div class="panel-head" id="sec-water" hidden>
+        <h2>Voda</h2>
+        <div class="field"><label for="water-level">Hladina</label><input type="number" id="water-level" step="0.5" placeholder="z terénu + 1 m"></div>
+        <p class="tool-hint">Výška v metroch. Prázdne = 1 m nad miestom, kde začneš.</p>
+      </div>
+      <div class="panel-head" id="sec-attr" hidden>
+        <h2>Atribúty servera</h2>
+        <label class="check"><input type="checkbox" id="attr-block" checked> <span class="dot block"></span> Blokovanie (nedá sa prejsť)</label>
+        <label class="check"><input type="checkbox" id="attr-water"> <span class="dot water"></span> Voda</label>
+        <label class="check"><input type="checkbox" id="attr-banpk"> <span class="dot banpk"></span> Bez PvP</label>
+      </div>
+      <div class="panel-head">
+        <button type="button" id="btn-ground-all" title="Po zmene výšky terénu">Položiť všetky objekty na terén</button>
+      </div>
+      <div class="catalogue" id="catalogue" hidden>
+        <div class="panel-head">
+          <div class="cat-head"><h2>Pridať textúru</h2><button type="button" id="cat-close" aria-label="Zavrieť">✕</button></div>
+          <input type="search" id="cat-search" placeholder="Hľadať (napr. grass, sand, stone)" aria-label="Hľadať textúry">
+        </div>
+        <ul class="lib-list" id="cat-list"></ul>
+      </div>
+    </div>
   </aside>
 
   <section class="viewport" id="viewport">
@@ -54,7 +97,17 @@
     <div class="panel-head"><h2>Vlastnosti</h2></div>
     <div id="inspector" class="inspector-body"><p class="muted">Klikni na objekt v mape.</p></div>
     <div class="panel-head"><h2>Klávesy</h2></div>
-    <dl class="keys">
+    <dl class="keys" id="keys-terrain" hidden>
+      <dt>Ľavé tlačidlo</dt><dd>maľovať</dd>
+      <dt>Ctrl + ľavé</dt><dd>opačne (znížiť, zmazať)</dd>
+      <dt>Alt + klik</dt><dd>vziať výšku, textúru, hladinu</dd>
+      <dt>Pravé tlačidlo</dt><dd>otáčanie kamery</dd>
+      <dt>Stredné tlačidlo</dt><dd>posun kamery</dd>
+      <dt>[ / ]</dt><dd>menší / väčší štetec</dd>
+      <dt>T</dt><dd>späť na objekty</dd>
+      <dt>Ctrl+Z / Ctrl+Y</dt><dd>späť / znova</dd>
+    </dl>
+    <dl class="keys" id="keys-objects">
       <dt>Ľavé tlačidlo</dt><dd>výber, otáčanie kamery</dd>
       <dt>Pravé tlačidlo</dt><dd>posun kamery</dd>
       <dt>Koliesko</dt><dd>priblíženie</dd>
@@ -62,6 +115,7 @@
       <dt>Del</dt><dd>zmazať</dd>
       <dt>Ctrl+D</dt><dd>duplikovať</dd>
       <dt>F</dt><dd>zamerať vybraný</dd>
+      <dt>T</dt><dd>prepnúť na terén</dd>
       <dt>Ctrl+Z / Ctrl+Y</dt><dd>späť / znova</dd>
     </dl>
   </aside>
