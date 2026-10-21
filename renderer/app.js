@@ -271,6 +271,12 @@ function change(fn) {
   syncSelection();
 }
 
+// Shift+R: round the selected objects' rotation to the 15° grid
+function snapRotation() {
+  const sel = selectedObjects();
+  change(() => { for (const o of sel) o.yaw = (Math.round((o.yaw || 0) / 15) * 15 + 360) % 360; });
+  setMsg(`Rotácia ${sel.length} objektov zarovnaná na 15°.`);
+}
 function removeSelected() {
   if (!selection.size) return;
   const n = selection.size;
@@ -401,7 +407,14 @@ function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&am
 /* ---------- library & placing ---------- */
 
 let libType = "Building";
-const PREFABS = "Prefaby";
+const PREFABS = "Prefaby", RECENT = "Posledné";
+// the last placed objects, newest first (per viewer, so browser storage is enough)
+let recent = [];
+try { recent = JSON.parse(localStorage.getItem("apix-recent-objects") || "[]"); } catch { recent = []; }
+function rememberRecent(crc) {
+  recent = [crc, ...recent.filter((c) => c !== crc)].slice(0, 24);
+  try { localStorage.setItem("apix-recent-objects", JSON.stringify(recent)); } catch { /* storage unavailable */ }
+}
 async function renderPrefabs(q) {
   const list = (await window.studio.prefabs()).filter((p) => !q || p.name.toLowerCase().includes(q));
   if (libType !== PREFABS) return;
@@ -414,9 +427,11 @@ async function renderPrefabs(q) {
 function renderLibrary() {
   const q = $("lib-search").value.trim().toLowerCase();
   const types = [...new Set(library.map((p) => p.type))].sort();
-  $("lib-types").innerHTML = ["Všetko", ...types, PREFABS].map((t) => `<button type="button" class="chip" data-type="${escapeHtml(t)}" aria-pressed="${t === libType}">${escapeHtml(t)}</button>`).join("");
+  $("lib-types").innerHTML = ["Všetko", RECENT, ...types, PREFABS].map((t) => `<button type="button" class="chip" data-type="${escapeHtml(t)}" aria-pressed="${t === libType}">${escapeHtml(t)}</button>`).join("");
   if (libType === PREFABS) { thumbObserver.disconnect(); renderPrefabs(q); return; }
-  const rows = library.filter((p) => (libType === "Všetko" || p.type === libType) && (!q || p.name.toLowerCase().includes(q) || p.folder.toLowerCase().includes(q)));
+  const matches = (p) => !q || p.name.toLowerCase().includes(q) || p.folder.toLowerCase().includes(q);
+  const rows = libType === RECENT ? recent.map((c) => libByCrc.get(c)).filter((p) => p && matches(p))
+    : library.filter((p) => (libType === "Všetko" || p.type === libType) && matches(p));
   $("lib-list").innerHTML = rows.slice(0, 400).map((p) =>
     `<li data-crc="${p.crc}" class="${placing && placing.crc === p.crc ? "active" : ""}"><img class="thumb" data-crc="${p.crc}" alt=""><span class="name">${escapeHtml(p.name)}</span><span class="type">${escapeHtml(p.type)}</span><span class="folder">${escapeHtml(p.folder)}</span></li>`).join("")
     + (rows.length > 400 ? `<li class="muted">… a ďalších ${rows.length - 400}, spresni hľadanie</li>` : "")
@@ -526,11 +541,41 @@ function placementPoint(e) {
   p.x = THREE.MathUtils.clamp(p.x, 0.01, w - 0.01); p.z = THREE.MathUtils.clamp(p.z, 0.01, d - 0.01);
   return p;
 }
+// outline of the ghost's footprint on the ground, so the spot it covers is visible under roofs and in the air
+const footprint = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffd27a, depthTest: false }));
+footprint.renderOrder = 5; footprint.visible = false;
+scene.add(footprint);
+const fpBox = new THREE.Box3();
+function updateFootprint() {
+  if (!placing || !placing.point || !placing.ghost.children.length) { footprint.visible = false; return; }
+  placing.ghost.updateMatrixWorld(true);
+  fpBox.setFromObject(placing.ghost);
+  if (fpBox.isEmpty()) { footprint.visible = false; return; }
+  const { min, max } = fpBox, pts = [];
+  const edge = (x0, z0, x1, z1) => { for (let i = 0; i < 8; i++) { const t = i / 8, x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t; pts.push(new THREE.Vector3(x, heights.at(x, z) + 0.15, z)); } };
+  edge(min.x, min.z, max.x, min.z); edge(max.x, min.z, max.x, max.z); edge(max.x, max.z, min.x, max.z); edge(min.x, max.z, min.x, min.z);
+  footprint.geometry.setFromPoints(pts);
+  footprint.visible = true;
+}
 function updateGhost() {
   if (!placing || !placing.point) return;
   const p = placing.point;
   placing.ghost.position.set(p.x, p.y + placing.lift, p.z);
   placing.ghost.rotation.y = rad(placing.yaw);
+  updateFootprint();
+}
+// raycasting every object on each mouse move is slow on big maps: the ghost follows at most once per frame
+let placeEvent = null;
+function queuePlacementMove(e) {
+  const first = !placeEvent;
+  placeEvent = e;
+  if (!first) return;
+  requestAnimationFrame(() => {
+    const ev = placeEvent; placeEvent = null;
+    if (!placing || !ev) return;
+    const p = placementPoint(ev);
+    if (p) { placing.point = p; updateGhost(); }
+  });
 }
 function showLift() {
   $("placing-lift").textContent = placing && placing.lift ? ` · výška ${placing.lift > 0 ? "+" : ""}${placing.lift.toFixed(1)} m` : "";
@@ -547,7 +592,7 @@ renderer.domElement.addEventListener("wheel", (e) => {
 }, { passive: false, capture: true });
 function stopPlacing() {
   if (!placing) return;
-  scene.remove(placing.ghost); placing = null;
+  scene.remove(placing.ghost); placing = null; footprint.visible = false;
   $("placing").hidden = true; renderLibrary();
 }
 
@@ -793,7 +838,7 @@ function pick(e, targets) {
 }
 renderer.domElement.addEventListener("pointermove", (e) => {
   if (!map) return;
-  if (placing) { const p = placementPoint(e); if (p) { placing.point = p; updateGhost(); } }
+  if (placing) queuePlacementMove(e);
   const hit = pick(e, [terrainGroup])[0];
   if (hit) {
     const m = fromScene(hit.point);
@@ -861,6 +906,7 @@ renderer.domElement.addEventListener("pointerup", (e) => {
     const o = { id: nextId++, crc: placing.crc, ...fromScene(p), yaw: placing.yaw, pitch: 0, roll: 0, bias: 0 };
     change(() => { objects.push(o); });
     setMsg(`Položené: ${placing.name}.`);
+    rememberRecent(placing.crc);
     if (!e.shiftKey) { stopPlacing(); select(o.id); }
     return;
   }
@@ -999,7 +1045,8 @@ window.addEventListener("keydown", (e) => {
   else if (k === "g") $("snap").checked = !$("snap").checked;
   else if (k === "f") focusSelected();
   else if (k === "h") { resetView(); setMsg("Kamera späť nad mapou."); }
-  else if (k === "r" && placing) { placing.yaw = (placing.yaw + 45) % 360; updateGhost(); }
+  else if (k === "r" && placing) { placing.yaw = (placing.yaw + (e.shiftKey ? 15 : 45)) % 360; updateGhost(); }
+  else if (k === "r" && e.shiftKey && selection.size) snapRotation();
   else if (placing && (k === "pageup" || k === "pagedown")) { e.preventDefault(); liftPlacing(k === "pageup" ? 0.5 : -0.5); }
   else if (placing && k === "home") liftPlacing(null);
   else if (k === "escape") { if (placing) stopPlacing(); else if (mode === "spawns") selectSpawn(null); else select(null); }
@@ -1438,7 +1485,7 @@ window.__studio = {
     return fn(params || {});
   },
   setMainMode, setTool, save, undo, redo, startPlacing, groundAt: (x, z) => heights.at(x, z),
-  brush, get model() { return heights; }, get objects() { return objects; },
+  brush, get model() { return heights; }, get objects() { return objects; }, scene,
   get gizmo() { return gizmo; }, get pivot() { return pivot; }, select,
   // what a click at client (x, y) would hit: object ids (with the mesh name) in hit order
   pickAt(x, y) { return pick({ clientX: x, clientY: y }, [layer.root]).map((h) => ({ id: h.object.userData.id, mesh: h.object.name || h.object.type, dist: +h.distance.toFixed(1) })); },
