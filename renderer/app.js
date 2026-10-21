@@ -1361,6 +1361,45 @@ $("btn-export").addEventListener("click", async () => {
   } catch (e) { setMsg("Export zlyhal: " + e.message, true); }
 });
 
+/* ---------- game export: Map Studio renders minimap/atlas/shadows, mapgen/export-game.js stages the files ---------- */
+
+async function openGameExport() {
+  if (!map) return;
+  try {
+    const s = await window.studio.gameSuggest(map.dir, map.size);
+    $("gx-index").value = s.index; $("gx-x").value = s.base[0]; $("gx-y").value = s.base[1];
+    $("gx-hint").textContent = (s.existing ? "Mapa už v hre je: ponechaný jej index a poloha. " : "Navrhnutý voľný index a miesto vo svete bez prekrytia s inými mapami. ")
+      + "Town a spawny sa berú z karty Spawny. Súbory pôjdu do APIX\\_map_exports, server ani klient sa nemenia.";
+  } catch (e) { $("gx-hint").textContent = "Návrh sa nepodaril: " + e.message; }
+  $("game-dlg").showModal();
+}
+async function runGameExport(opts) {
+  requireMap();
+  if (dirty || spawnsDirty || heights.isDirty) await save();
+  await exportMaps();
+  return window.studio.gameExport(map.dir, opts);
+}
+$("btn-game").addEventListener("click", openGameExport);
+$("game-close").addEventListener("click", () => $("game-dlg").close());
+$("game-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("game-dlg").close();
+  setMsg("Pripravujem súbory do hry…");
+  try {
+    const r = await runGameExport({ index: Number($("gx-index").value), base: [Number($("gx-x").value), Number($("gx-y").value)],
+      gotoAlias: $("gx-goto").value.trim() || null, objectCollision: $("gx-objects").checked });
+    const c = r.serverAttr.cells, warn = r.spawns.warnings;
+    showReport("Súbory do hry pripravené", `<p>${r.files} súborov v <a href="#" class="link" id="gx-reveal">${escapeHtml(r.out)}</a>.</p>
+      <p>Index ${r.index}, BasePosition ${r.base.join(", ")}, Town ${r.town.map(Math.round).join(", ")}. server_attr: ${c.block} blokovaných, ${c.water} voda, ${c.banpk} bez PvP, ${c.object} pod objektmi (bunky 0,5 m).</p>
+      <p>Spawny: ${r.spawns.regen} v regen.txt, ${r.spawns.npc} NPC. Tiene: ${Object.values(r.shadows).join(", ")}.</p>
+      ${warn.length ? `<p class="warn">${warn.map(escapeHtml).join("<br>")}</p>` : ""}
+      <p class="sub">Nasadenie (server + klient) je samostatný krok – kroky sú v manifest.json:</p>
+      <pre class="steps">${escapeHtml([...r.deploy.server, ...r.deploy.client].join("\n"))}</pre>`);
+    $("gx-reveal").addEventListener("click", (ev) => { ev.preventDefault(); window.studio.reveal(r.out + "\\manifest.json"); });
+    setMsg("Súbory do hry pripravené.");
+  } catch (err) { setMsg("Export do hry zlyhal: " + String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""), true); }
+});
+
 const API = {
   status() {
     return map ? {
@@ -1487,6 +1526,8 @@ const API = {
   ground_all_objects() { requireMap(); groundAllObjects(); return { objects: objects.length }; },
   check_map: () => checkMap(),
   export: () => exportMaps(),
+  suggest_game_slot() { requireMap(); return window.studio.gameSuggest(map.dir, map.size); },
+  game_export({ index, base, goto: gotoAlias = null, objectCollision = true }) { return runGameExport({ index, base, gotoAlias, objectCollision }); },
   async save() { requireMap(); await save(); return { message: $("st-msg").textContent, unsaved: { objects: dirty, terrain: heights.isDirty, spawns: spawnsDirty } }; },
   undo() { undo(); return { undo: undoStack.length, redo: redoStack.length }; },
   redo() { redo(); return { undo: undoStack.length, redo: redoStack.length }; },

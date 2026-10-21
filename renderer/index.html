@@ -27,7 +27,8 @@
   <button type="button" id="btn-walk" aria-pressed="false" title="Položiť postavu a prechádzať sa (P)">Postava <kbd>P</kbd></button>
   <span class="sep"></span>
   <button type="button" id="btn-check" title="Kontrola pred nasadením">Kontrola</button>
-  <button type="button" id="btn-export" title="Minimapa a atlas vykreslené zhora">Export</button>
+  <button type="button" id="btn-export" title="Minimapa, atlas a tiene vykreslené zhora">Export</button>
+  <button type="button" id="btn-game" title="Pripraví súbory pre server a klient do _map_exports (nenasadzuje)">Do hry…</button>
   <span class="sep"></span>
   <button type="button" id="btn-undo" title="Späť (Ctrl+Z)" disabled>Späť</button>
   <button type="button" id="btn-redo" title="Znova (Ctrl+Y)" disabled>Znova</button>
@@ -194,6 +195,24 @@
       <p class="sub new-hint">Mapa sa vytvorí v priečinku WorldEditora a hneď otvorí.</p>
       <p class="warn-text" id="nm-error"></p>
       <div class="row-actions"><button type="submit" class="primary" id="nm-create">Vytvoriť</button></div>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="report" id="game-dlg">
+  <form method="dialog" id="game-form" class="new-form">
+    <div class="report-head"><h2>Export do hry</h2><button type="button" id="game-close" aria-label="Zavrieť">✕</button></div>
+    <div class="report-body form-grid">
+      <label for="gx-index">Index mapy</label>
+      <input type="number" id="gx-index" min="1" max="999" required>
+      <label for="gx-x">BasePosition</label>
+      <div class="size-row"><input type="number" id="gx-x" step="25600" min="0" required> <input type="number" id="gx-y" step="25600" min="0" required></div>
+      <label for="gx-goto">/goto alias</label>
+      <input type="text" id="gx-goto" pattern="[a-z0-9_]*" placeholder="napr. arena (nepovinné)" autocomplete="off">
+      <label for="gx-objects">Kolízie</label>
+      <label class="check"><input type="checkbox" id="gx-objects" checked> objekty blokujú (OBJECT v server_attr)</label>
+      <p class="sub new-hint" id="gx-hint"></p>
+      <div class="row-actions"><button type="submit" class="primary" id="gx-run">Pripraviť súbory</button></div>
     </div>
   </form>
 </dialog>

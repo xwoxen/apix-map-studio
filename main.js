@@ -9,6 +9,8 @@ const { parseEnvironment } = require("./envlib");
 const { levelsFromLight, shadowRaw, shadowDds } = require("./mapgen/shadow");
 const { readSpawnFile, writeSpawns } = require("./mapgen/spawns");
 const { objectCells } = require("./mapgen/collision");
+const { suggestSlot } = require("./mapgen/game-slots");
+const { exportGame } = require("./mapgen/export-game");
 
 const { APIX_ROOT, EDITOR_ROOT, PACK_ROOT, getAssetRoots, resolveAsset, getLibrary } = require("./assets");
 const GRANNY_EXPORTER = path.join(APIX_ROOT, "_codex_granny_compiled", "GrannyExporter.exe");
@@ -460,6 +462,15 @@ ipcMain.handle("library:list", () => [...getLibrary().values()].filter(modelAvai
 ipcMain.handle("model:get", (_, crc) => modelFor(crc));
 ipcMain.handle("character:get", (_, cls) => characterParts(cls));
 ipcMain.handle("collision:grid", (_, objects, size) => collisionGrid(objects, size));
+// game export: staging only (APIX/_map_exports/<map>_<time>); deploying stays a separate, confirmed step
+ipcMain.handle("game:suggest", (_, dir, size) => suggestSlot(path.basename(dir), size));
+ipcMain.handle("game:export", (_, dir, opts) => {
+  const d = new Date(), two = (n) => String(n).padStart(2, "0");
+  const stamp = `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
+  const out = path.join(APIX_ROOT, "_map_exports", `${path.basename(dir)}_${stamp}`);
+  const m = exportGame(dir, { ...opts, out, editorRoot: path.dirname(dir) });
+  return { out, files: m.files.length, index: m.index, base: m.basePosition, town: m.town, shadows: m.shadows, spawns: m.spawns, serverAttr: m.serverAttr, deploy: m.deploy };
+});
 ipcMain.handle("thumb:get", (_, crc) => (fs.existsSync(thumbFile(crc)) ? assetUrl(thumbFile(crc)) : null));
 ipcMain.handle("thumb:save", (_, crc, dataUrl) => {
   const png = Buffer.from(String(dataUrl).replace(/^data:image\/png;base64,/, ""), "base64");

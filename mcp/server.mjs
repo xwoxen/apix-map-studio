@@ -133,6 +133,15 @@ server.registerTool("mapstudio_update_spawns", {
   inputSchema: { items: z.array(z.object({ id: z.number().int(), x: z.number().optional(), y: z.number().optional(), ...SPAWN, vnum: z.number().int().positive().optional() })).min(1) }
 }, tool((a) => call("update_spawns", a)));
 
+server.registerTool("mapstudio_game_export", {
+  title: "Export do hry (staging)",
+  description: "Uloží mapu, vykreslí minimapu/atlas/tiene a pripraví súbory pre server a klient do APIX/_map_exports/<mapa>_<čas> s manifest.json. Server ani klient nemení. Bez index/base navrhne voľný slot (existujúca mapa si ponechá svoj).",
+  inputSchema: { index: z.number().int().positive().optional(), base: z.array(z.number().int().nonnegative()).length(2).optional(), goto: z.string().regex(/^[a-z0-9_]*$/).optional(), objectCollision: z.boolean().optional() }
+}, tool(async (a) => {
+  const slot = a.index && a.base ? null : await call("suggest_game_slot");
+  return call("game_export", { ...a, index: a.index || slot.index, base: a.base || slot.base });
+}));
+
 server.registerTool("mapstudio_set_town", {
   title: "Nastaviť Town",
   description: `Town.txt mapy: kde sa hráči objavia po teleporte (uloží mapstudio_save, export ho použije bez --town). ${POS}`,

@@ -119,7 +119,7 @@ function exportGame(mapDir, { index, base, out, town, gotoAlias, editorRoot, obj
   const setting = readSetting(mapDir);
   const [sw, sh] = setting.size;
   if (base[0] % TERRAIN || base[1] % TERRAIN) throw new Error("BasePosition must be a multiple of 25600");
-  const studioTown = readSpawnFile(mapDir).town;
+  const studioTown = readSpawnFile(mapDir).town, townGiven = Boolean(town);
   town = town || (studioTown ? [studioTown.x, studioTown.y] : [sw * 128, sh * 128]);
   if (attrAt(mapDir, town[0], town[1]) & 1) throw new Error(`town ${town} is on a blocked cell`);
   if (fs.existsSync(out)) throw new Error(`${out} already exists; choose a new staging folder`);
@@ -143,6 +143,7 @@ function exportGame(mapDir, { index, base, out, town, gotoAlias, editorRoot, obj
   put("server_attr_preview.png", attrPreview(attr.grid, ...attr.gridSize));
   // spawns placed in Map Studio (<map>/_studio/spawns.json); a spawn centre on a blocked cell never spawns
   const spawns = readSpawns(mapDir), rows = regenRows(spawns), warnings = [];
+  if (!townGiven && !studioTown) warnings.push(`town not set (Map Studio: Spawny > Town, or --town); the map centre ${town} is used`);
   for (const sp of spawns) {
     const v = attr.grid[Math.floor(sp.y * 2) * attr.gridSize[0] + Math.floor(sp.x * 2)];
     if (v & 129) warnings.push(`spawn ${sp.type} ${sp.vnum} at ${Math.round(sp.x)},${Math.round(sp.y)} stands on a blocked cell (flags ${v})`);
