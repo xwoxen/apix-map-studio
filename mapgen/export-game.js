@@ -5,13 +5,17 @@
 // Usage: node mapgen/export-game.js <map dir> --index <n> --base <x> <y> --out <staging dir>
 //          [--town <x> <y>]   spawn in meters from the map's north-west corner (default: map centre)
 //          [--goto <alias>]   /goto alias for settings.lua (default: none)
+//          [--no-object-collision]  leave OBJECT (128) out of server_attr
 //
 // Run Map Studio's Export first: it renders <map>/<terrain>/minimap.dds and <map>/_export/atlas.
 
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const zlib = require("zlib");
 const { compress } = require("./lzo");
+const { objectCells } = require("./collision");
+const { parseAreaData } = require("../maplib");
 
 const TERRAIN = 25600;                 // world units per terrain (CellScale 200 × 128 cells)
 const SECTOR = 6400, CELL = 50;        // server sectree and attribute cell
@@ -47,7 +51,43 @@ function shadowDds() {
 
 // server_attr: int32 width, height in sectors; per sector int32 size + LZO of 128×128 DWORD cells (0.5 m).
 // Client attr.atr pixels are 1 m, so each covers 2×2 server cells; the flag bits are the same.
-function serverAttr(dir, size) {
+function readObjects(dir, size) {
+  const out = [];
+  for (let ty = 0; ty < size[1]; ty++) for (let tx = 0; tx < size[0]; tx++) {
+    const f = findFile(path.join(dir, `${String(tx).padStart(3, "0")}${String(ty).padStart(3, "0")}`), "AreaData.txt");
+    if (f) out.push(...parseAreaData(fs.readFileSync(f, "latin1")));
+  }
+  return out;
+}
+
+// RGB preview of server_attr (1 px = 0.5 m): block red, water blue, no-PvP green, object yellow
+function attrPreview(grid, w, h) {
+  const rows = [];
+  for (let y = 0; y < h; y++) {
+    const row = Buffer.alloc(1 + w * 3);
+    for (let x = 0; x < w; x++) {
+      const v = grid[y * w + x];
+      const c = v & 128 ? [235, 200, 40] : v & 1 ? [200, 50, 50] : v & 2 ? [50, 110, 220] : v & 4 ? [60, 160, 80] : [40, 40, 40];
+      c.forEach((b, i) => { row[1 + x * 3 + i] = b; });
+    }
+    rows.push(row);
+  }
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type, "latin1"), data]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(zlib.crc32 ? zlib.crc32(td) : crc32(td));
+    return Buffer.concat([len, td, crc]);
+  };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", ihdr), chunk("IDAT", zlib.deflateSync(Buffer.concat(rows))), chunk("IEND", Buffer.alloc(0))]);
+}
+function crc32(b) {
+  let c, crc = 0xffffffff;
+  for (let n = 0; n < b.length; n++) { c = (crc ^ b[n]) & 0xff; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crc = (crc >>> 8) ^ c; }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function serverAttr(dir, size, objectCollision = true) {
   const w = size[0] * (TERRAIN / SECTOR), h = size[1] * (TERRAIN / SECTOR);
   const attrs = new Map();
   for (let ty = 0; ty < size[1]; ty++) for (let tx = 0; tx < size[0]; tx++) {
@@ -59,21 +99,26 @@ function serverAttr(dir, size) {
     attrs.set(`${tx},${ty}`, b);
   }
   const parts = [Buffer.from(new Int32Array([w, h]).buffer)];
-  const flags = { block: 0, water: 0, banpk: 0 };
+  const flags = { block: 0, water: 0, banpk: 0, object: 0 };
+  const gw = w * CELLS, gh = h * CELLS, grid = new Uint8Array(gw * gh);
+  const collision = objectCollision ? objectCells(readObjects(dir, size), size[0] * 256, size[1] * 256) : null;
   for (let sy = 0; sy < h; sy++) for (let sx = 0; sx < w; sx++) {
     const cells = Buffer.alloc(CELLS * CELLS * 4);
     for (let cy = 0; cy < CELLS; cy++) for (let cx = 0; cx < CELLS; cx++) {
       const mx = (sx * SECTOR + cx * CELL) / 100, my = (sy * SECTOR + cy * CELL) / 100;   // meters from the NW corner
       const tx = Math.floor(mx / 256), ty = Math.floor(my / 256);
-      const v = attrs.get(`${tx},${ty}`)[6 + Math.floor(my - ty * 256) * 256 + Math.floor(mx - tx * 256)] & 7;
-      if (v & 1) flags.block++; if (v & 2) flags.water++; if (v & 4) flags.banpk++;
+      let v = attrs.get(`${tx},${ty}`)[6 + Math.floor(my - ty * 256) * 256 + Math.floor(mx - tx * 256)] & 7;
+      const gx = sx * CELLS + cx, gy = sy * CELLS + cy;
+      if (collision && collision.cells.has(`${gx},${gy}`)) v |= 128;
+      grid[gy * gw + gx] = v;
+      if (v & 1) flags.block++; if (v & 2) flags.water++; if (v & 4) flags.banpk++; if (v & 128) flags.object++;
       cells.writeUInt32LE(v, (cy * CELLS + cx) * 4);
     }
     const z = compress(cells);
     const len = Buffer.alloc(4); len.writeInt32LE(z.length);
     parts.push(len, z);
   }
-  return { data: Buffer.concat(parts), sectors: [w, h], cells: flags };
+  return { data: Buffer.concat(parts), sectors: [w, h], cells: flags, grid, gridSize: [gw, gh], collision: collision && collision.report };
 }
 
 function attrAt(dir, xm, ym) {
@@ -82,7 +127,7 @@ function attrAt(dir, xm, ym) {
   return fs.readFileSync(f)[6 + Math.floor(ym - ty * 256) * 256 + Math.floor(xm - tx * 256)];
 }
 
-function exportGame(mapDir, { index, base, out, town, gotoAlias, editorRoot }) {
+function exportGame(mapDir, { index, base, out, town, gotoAlias, editorRoot, objectCollision = true }) {
   const name = path.basename(mapDir);
   const setting = readSetting(mapDir);
   const [sw, sh] = setting.size;
@@ -103,8 +148,11 @@ function exportGame(mapDir, { index, base, out, town, gotoAlias, editorRoot }) {
   put(`${srv}/Setting.txt`, Buffer.from(["ScriptType\tMapSetting", "", "CellScale\t200", "HeightScale\t0.500000", "", "ViewRadius\t128", "",
     `MapSize\t${sw}\t${sh}`, `BasePosition\t${base[0]}\t${base[1]}`, `TextureSet\ttextureset\\${name}.txt`, ""].join("\n"), "latin1"));
   put(`${srv}/Town.txt`, Buffer.from(`${Math.round(town[0])} ${Math.round(town[1])}\n`, "latin1"));
-  const attr = serverAttr(mapDir, setting.size);
+  const attr = serverAttr(mapDir, setting.size, objectCollision);
+  const townCell = attr.grid[Math.floor(town[1] * 2) * attr.gridSize[0] + Math.floor(town[0] * 2)];
+  if (townCell & 129) throw new Error(`town ${town} is blocked in server_attr (flags ${townCell}); pick another --town`);
   put(`${srv}/server_attr`, attr.data);
+  put("server_attr_preview.png", attrPreview(attr.grid, ...attr.gridSize));
   for (const f of ["regen.txt", "npc.txt", "boss.txt", "stone.txt"]) put(`${srv}/${f}`, Buffer.alloc(0));
 
   /* client pack apix_<name>: map folder (lower-case names like the shipped packs), texture set, atlas */
@@ -133,7 +181,7 @@ function exportGame(mapDir, { index, base, out, town, gotoAlias, editorRoot }) {
 
   const manifest = {
     map: name, index, basePosition: base, mapSize: setting.size, town, environment: setting.environment,
-    serverAttr: { sectors: attr.sectors, cells: attr.cells },
+    serverAttr: { sectors: attr.sectors, cells: attr.cells, objectCollision: attr.collision || "off" },
     deploy: {
       server: [
         `copy server/${name} -> apix-server/gamefiles/data/map/${name}`,
@@ -160,6 +208,7 @@ if (require.main === module) {
   const m = exportGame(mapDir, {
     index: Number(opt("--index")[0]), base: opt("--base", 2).map(Number), out: path.resolve(opt("--out")[0]),
     town: opt("--town", 2) ? opt("--town", 2).map(Number) : null, gotoAlias: opt("--goto") ? opt("--goto")[0] : null,
+    objectCollision: !args.includes("--no-object-collision"),
     editorRoot: path.dirname(mapDir)
   });
   console.log(`staged ${m.map} (index ${m.index}, base ${m.basePosition}, ${m.files.length} files)`);
