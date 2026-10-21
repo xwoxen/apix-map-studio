@@ -18,6 +18,7 @@ const { compress } = require("./lzo");
 const { objectCells } = require("./collision");
 const { litLevels, shadowRaw, shadowDds } = require("./shadow");
 const { readSpawns, readSpawnFile, regenRows } = require("./spawns");
+const { readIndex, readRects } = require("./game-slots");
 const { parseAreaData } = require("../maplib");
 
 const TERRAIN = 25600;                 // world units per terrain (CellScale 200 × 128 cells)
@@ -187,23 +188,40 @@ function exportGame(mapDir, { index, base, out, town, gotoAlias, editorRoot, obj
     shadows,
     spawns: { regen: spawns.filter((x) => x.type !== "npc").length, npc: spawns.filter((x) => x.type === "npc").length, warnings },
     serverAttr: { sectors: attr.sectors, cells: attr.cells, objectCollision: attr.collision || "off" },
-    deploy: {
-      server: [
-        `copy server/${name} -> apix-server/gamefiles/data/map/${name}`,
-        `append "${index} ${name}" to apix-server/gamefiles/data/map/index`,
-        `add ${index} to GAME_MAP_ALLOW (auth and ch1) in apix-server/local-deploy/docker-compose.yml, recreate containers`,
-        ...(gotoAlias ? [`append add_goto_info("${gotoAlias}", 0, ${index}, ${Math.round(base[0] / 100 + town[0])}, ${Math.round(base[1] / 100 + town[1])}) to apix-server/gamefiles/data/settings.lua`] : [])
-      ],
-      client: [
-        `pack client/${name} -> apix-client/bin/pack/${name}/ + ${name}.zip, and dist/pack/${name}.zip`,
-        `append "${name}\\tZIP" to bin/pack/Index and dist/pack/Index`,
-        `append "${name}\\t${base[0]}\\t${base[1]}\\t${sw}\\t${sh}" to root atlasinfo.txt (bin/pack/root, root.zip in bin and dist)`
-      ]
-    },
+    deploy: deploySteps({ name, index, base, town, gotoAlias, sw, sh }),
     files
   };
   put("manifest.json", Buffer.from(JSON.stringify(manifest, null, 2) + "\n"));
   return manifest;
+}
+
+// A map already in the game (same name in map/index with the same index and atlas position) is updated in place:
+// only its files are replaced. A new map also needs its index, GAME_MAP_ALLOW, Index and atlasinfo lines.
+function deploySteps({ name, index, base, town, gotoAlias, sw, sh }) {
+  const own = readIndex().find((e) => e.name === name), rect = readRects().find((r) => r.name === name);
+  const update = own && own.index === index && rect && rect.x === base[0] && rect.y === base[1];
+  const gotoLine = gotoAlias ? [`add_goto_info("${gotoAlias}", 0, ${index}, ${Math.round(base[0] / 100 + town[0])}, ${Math.round(base[1] / 100 + town[1])}) in apix-server/gamefiles/data/settings.lua (if missing)`] : [];
+  if (update) {
+    return {
+      mode: "update",
+      server: [`replace apix-server/gamefiles/data/map/${name}/* with server/${name}/* (index ${index} and GAME_MAP_ALLOW stay), recreate containers`, ...gotoLine],
+      client: [`replace apix-client/bin/pack/${name}/ with client/${name}/ and rebuild ${name}.zip in bin/pack and dist/pack (Index and atlasinfo stay)`]
+    };
+  }
+  return {
+    mode: "new",
+    server: [
+      `copy server/${name} -> apix-server/gamefiles/data/map/${name}`,
+      `append "${index} ${name}" to apix-server/gamefiles/data/map/index`,
+      `add ${index} to GAME_MAP_ALLOW (auth and ch1) in apix-server/local-deploy/docker-compose.yml, recreate containers`,
+      ...gotoLine
+    ],
+    client: [
+      `pack client/${name} -> apix-client/bin/pack/${name}/ + ${name}.zip, and dist/pack/${name}.zip`,
+      `append "${name}\\tZIP" to bin/pack/Index and dist/pack/Index`,
+      `append "${name}\\t${base[0]}\\t${base[1]}\\t${sw}\\t${sh}" to root atlasinfo.txt (bin/pack/root, root.zip in bin and dist)`
+    ]
+  };
 }
 
 if (require.main === module) {
