@@ -861,6 +861,33 @@ renderer.domElement.addEventListener("pointermove", (e) => {
   } else if (mode === "terrain") cursor.line.visible = false;
   if (painting && hit) queuePaint(hit.point, e);
 });
+// spawn markers can be dragged to a new spot (one undo step per drag)
+let spawnDrag = null;
+renderer.domElement.addEventListener("pointerdown", (e) => {
+  if (mode !== "spawns" || e.button !== 0 || !map || walker.active || walker.placing || pickingTown) return;
+  const marker = pick(e, spawnLayer.pickables())[0];
+  const id = marker && marker.object.userData.spawnId;
+  if (!marker || id === "town") return;
+  spawnDrag = { id, before: spawnState(), moved: false };
+  fly.enabled = false;
+});
+renderer.domElement.addEventListener("pointermove", (e) => {
+  if (!spawnDrag) return;
+  const hit = pick(e, [terrainGroup])[0], sp = spawns.find((x) => x.id === spawnDrag.id);
+  if (!hit || !sp) return;
+  sp.x = +hit.point.x.toFixed(2); sp.y = +hit.point.z.toFixed(2);
+  spawnDrag.moved = true;
+  spawnLayer.set(sp, mobLabel(sp.vnum));
+});
+window.addEventListener("pointerup", () => {
+  if (!spawnDrag) return;
+  const d = spawnDrag;
+  spawnDrag = null; fly.enabled = true;
+  if (!d.moved) return;
+  pushHistory(d.before, "spawns");
+  selectSpawn(d.id); updateUi();
+  setMsg("Spawn presunutý.");
+});
 renderer.domElement.addEventListener("pointerdown", (e) => {
   downAt = e.button === 0 ? [e.clientX, e.clientY] : null;
   if (walker.active || walker.placing) return;
