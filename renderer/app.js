@@ -226,7 +226,8 @@ gizmo.addEventListener("objectChange", () => {
   if (!dragStart) return;
   pivot.rotation.x = 0; pivot.rotation.z = 0;
   const d = pivot.position.clone().sub(dragStart.pivot), r = pivot.rotation.y - dragStart.rot;
-  const snapGround = $("snap").checked && gizmo.mode === "translate" && heights;
+  // Ground snap only for horizontal handles (X, Z, XZ plane); the centre handle and anything with Y move freely.
+  const snapGround = $("snap").checked && gizmo.mode === "translate" && heights && !/Y|E/.test(gizmo.axis || "");
   for (const it of dragStart.items) {
     const np = it.p.clone().sub(dragStart.pivot).applyAxisAngle(UP, r).add(dragStart.pivot).add(d);
     if (snapGround) np.y = heights.at(np.x, np.z);
@@ -1113,6 +1114,7 @@ window.__studio = {
   },
   setMainMode, setTool, save, undo, redo,
   brush, get model() { return heights; }, get objects() { return objects; },
+  get gizmo() { return gizmo; }, get pivot() { return pivot; }, select,
   // what a click at client (x, y) would hit: object ids (with the mesh name) in hit order
   pickAt(x, y) { return pick({ clientX: x, clientY: y }, [layer.root]).map((h) => ({ id: h.object.userData.id, mesh: h.object.name || h.object.type, dist: +h.distance.toFixed(1) })); },
   nodeInfo(id) {
