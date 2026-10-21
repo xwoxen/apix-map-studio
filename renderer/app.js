@@ -822,8 +822,12 @@ $("noclip").addEventListener("change", (e) => { setNoclip(e.target.checked); e.t
 const moveClock = new THREE.Clock();
 
 window.addEventListener("keydown", (e) => {
-  if (e.target.matches && e.target.matches("input, select, textarea")) return;
   const k = e.key.toLowerCase();
+  // in text fields only the file shortcuts work (Ctrl+Z/C/V stay text editing); blur first so a typed value applies
+  if (e.target.matches && e.target.matches("input, select, textarea")) {
+    if (!(e.ctrlKey && ["s", "o", "n"].includes(k))) return;
+    e.target.blur();
+  }
   if (e.key === "Shift") shiftHeld = true;
   if ((walker.active || walker.placing) && !e.ctrlKey) {
     if (k === "escape") { walker.active ? stopWalking() : (walker.stop(), setMsg("")); }
