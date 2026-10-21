@@ -23,7 +23,8 @@ Prvé spustenie po inštalácii: `npm install` (Electron musí mať povolený in
   stromy (SpeedTree) zatiaľ ako zjednodušený strom v správnej veľkosti, efekty ako žltá značka,
   neznáme CRC ako fialová kocka.
 - Knižnica ~3 900 objektov zo všetkých `apix-client\bin\pack\*\property` v poradí `Index`
-  (prvý vlastník CRC vyhráva ako v klientovi) plus `property` z WorldEditora.
+  (prvý vlastník CRC vyhráva ako v klientovi) plus `property` z WorldEditora. Objekty, ktorých model v klientovi
+  nie je, sa v zozname neukazujú (kontrola mapy ich však pozná).
   Každý objekt má 3D náhľad (vykreslí sa pri prvom zobrazení riadku, uloží sa do
   `%APPDATA%\APIX Map Studio\thumbs`), pri prejdení myšou sa ukáže veľký náhľad.
 - Textúry, ktoré exportér nenájde (GR2 má uloženú cestu `d:\…`), sa dohľadajú vedľa zdrojového

@@ -475,7 +475,16 @@ function writeExport(dir, files) {
   }
   return { folder: path.join(dir, "_export", "atlas"), files: written, backup: fs.existsSync(backup) ? backup : null, preview };
 }
-ipcMain.handle("library:list", () => [...getLibrary().values()].map(({ crc, name, type, folder, model }) => ({ crc, name, type, folder, model })));
+// Properties whose GR2 model is not in the client (the main Property pack lists zones the client doesn't ship)
+// stay in the library for the map check but are left out of the list; their old placeholder thumbnails go.
+function modelAvailable(p) {
+  if (p.available === undefined) {
+    p.available = !/.gr2$/i.test(p.model) || Boolean(resolveAsset(p.model));
+    if (!p.available) fs.rmSync(thumbFile(p.crc), { force: true });
+  }
+  return p.available;
+}
+ipcMain.handle("library:list", () => [...getLibrary().values()].filter(modelAvailable).map(({ crc, name, type, folder, model }) => ({ crc, name, type, folder, model })));
 ipcMain.handle("model:get", (_, crc) => modelFor(crc));
 ipcMain.handle("character:get", () => characterParts());
 ipcMain.handle("thumb:get", (_, crc) => (fs.existsSync(thumbFile(crc)) ? assetUrl(thumbFile(crc)) : null));
