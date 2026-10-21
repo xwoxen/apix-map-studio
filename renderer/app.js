@@ -1606,7 +1606,7 @@ window.__studio = {
     return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height, visible: p.z < 1 && Math.abs(p.x) < 1 && Math.abs(p.y) < 1 };
   },
   walker,
-  startWalking, stopWalking, renderShadow,
+  startWalking, stopWalking, renderShadow, spawnLayer,
   async addTexture(game) { const e = heights.addTexture(game, await window.studio.textureUrl(game)); brush.texture = e.index; renderPalette(); return e.index; },
   stroke(points, opts = {}) {
     Object.assign(brush, opts);
@@ -1621,6 +1621,7 @@ updateUi();
 renderer.setAnimationLoop(() => {
   const dt = Math.min(0.1, moveClock.getDelta());
   if (walker.active) walker.update(dt); else { walker.update(dt); fly.update(dt, shiftHeld); }
+  if (spawnLayer.root.visible) spawnLayer.update(dt);
   environment.follow(camera);
   renderer.render(scene, camera);
 });

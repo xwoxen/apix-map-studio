@@ -1,6 +1,28 @@
 // Spawn markers: a coloured post with a label at each spawn point and its radius drawn on the terrain.
 // Spawn positions are meters from the map's north-west corner (x east, y south), like the MCP API.
 import * as THREE from "three";
+import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
+import { loadFbx } from "./objects.js";
+
+// one loaded model per monster vnum, cloned for each spawn and played in its wait motion
+const mobTemplates = new Map();
+function mobTemplate(vnum) {
+  if (!mobTemplates.has(vnum)) {
+    mobTemplates.set(vnum, (async () => {
+      const info = await window.studio.mobModel(vnum);
+      if (!info || !info.body) return null;
+      const body = await loadFbx(info.body);
+      body.traverse((m) => {
+        if (!m.isMesh) return;
+        m.frustumCulled = false;
+        for (const mat of Array.isArray(m.material) ? m.material : [m.material]) { mat.side = THREE.DoubleSide; mat.transparent = false; if (mat.map) mat.alphaTest = 0.4; }
+      });
+      const clip = info.wait ? (await loadFbx(info.wait)).animations[0] : null;
+      return { body, clip };
+    })().catch(() => null));
+  }
+  return mobTemplates.get(vnum);
+}
 
 export const SPAWN_TYPES = {
   m: { label: "Monštrá", color: 0xe0503c },
@@ -31,13 +53,18 @@ export class SpawnLayer {
     this.root = new THREE.Group(); this.root.name = "spawns";
     this.nodes = new Map();
     this.selected = null;
+    this.mixers = new Map();
+    this.models = true;                      // show monster models (off: posts only)
   }
+  update(dt) { for (const m of this.mixers.values()) m.update(dt); }
   clear() { for (const id of [...this.nodes.keys()]) this.remove(id); }
   remove(id) {
     const n = this.nodes.get(id);
     if (!n) return;
     this.root.remove(n);
-    n.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
+    this.mixers.delete(id);
+    // the monster model shares geometry and materials with its template, so only the marker parts are freed
+    for (const c of n.children) if (!c.userData.model) c.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
     this.nodes.delete(id);
   }
   // rebuild one spawn's marker (cheap: a post, a label and a ring)
@@ -53,6 +80,7 @@ export class SpawnLayer {
     const label = labelSprite(`${name || s.vnum}${s.type === "m" ? " ×" + s.count : ""}`, t.color);
     label.position.set(s.x, gy + 4.6, s.y);
     g.add(post, head, label);
+    if (this.models && s.type !== "town") this.attachModel(g, s, gy);
     const r = Math.max(0.6, s.type === "npc" ? 0.6 : s.radius);
     const pts = [];
     for (let i = 0; i <= 64; i++) {
@@ -65,6 +93,18 @@ export class SpawnLayer {
     this.root.add(g);
     this.nodes.set(s.id, g);
     if (this.selected === s.id) this.highlight(s.id);
+  }
+  async attachModel(g, s, gy) {
+    const t = await mobTemplate(s.vnum);
+    if (!t || this.nodes.get(s.id) !== g) return;          // no model, or the marker was rebuilt meanwhile
+    const model = cloneSkinned(t.body);
+    model.scale.setScalar(0.01); model.rotation.x = -Math.PI / 2;
+    const holder = new THREE.Group(); holder.userData.model = true;
+    holder.add(model);
+    holder.position.set(s.x + 1.2, gy, s.y);
+    model.traverse((o) => { if (o.isMesh) o.userData.spawnId = s.id; });
+    g.add(holder);
+    if (t.clip) { const mixer = new THREE.AnimationMixer(model); mixer.clipAction(t.clip).play(); this.mixers.set(s.id, mixer); }
   }
   // the players' arrival point (Town.txt): a gold post
   setTown(town) {

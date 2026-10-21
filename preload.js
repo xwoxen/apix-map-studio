@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld("studio", {
   gameSuggest: (dir, size) => ipcRenderer.invoke("game:suggest", dir, size),
   gameExport: (dir, opts) => ipcRenderer.invoke("game:export", dir, opts),
   mobs: () => ipcRenderer.invoke("mobs:list"),
+  mobModel: (vnum) => ipcRenderer.invoke("mob:model", vnum),
   spawns: (dir) => ipcRenderer.invoke("spawns:get", dir),
   saveSpawns: (dir, spawns, town) => ipcRenderer.invoke("spawns:save", dir, spawns, town),
   thumb: (crc) => ipcRenderer.invoke("thumb:get", crc),

@@ -341,6 +341,39 @@ function listMobs() {
   return mobs;
 }
 ipcMain.handle("mobs:list", () => listMobs());
+// a monster's model for spawn markers: <base>/<folder>/<folder>.gr2 and the GENERAL WAIT motion from motlist.txt
+const MOB_DIRS = ["monster", "monster2", "npc", "npc2", "guild"];
+let npcFolders = null;     // vnum -> model folder from root/npclist.txt ("vnum<TAB>folder")
+function clientFolders() {
+  if (npcFolders) return npcFolders;
+  npcFolders = new Map();
+  try {
+    for (const line of fs.readFileSync(path.join(PACK_ROOT, "root", "npclist.txt"), "latin1").split(/\r?\n/)) {
+      const [v, f] = line.split("\t").map((x) => (x || "").trim());
+      if (Number(v) > 0 && f && !npcFolders.has(Number(v))) npcFolders.set(Number(v), f);
+    }
+  } catch { /* no client root pack */ }
+  return npcFolders;
+}
+async function mobModel(vnum) {
+  const m = listMobs().find((x) => x.vnum === vnum);
+  const folder = clientFolders().get(vnum) || (m && m.folder);   // the client's npclist decides, like in the game
+  if (!folder) return null;
+  for (const base of MOB_DIRS) {
+    const dir = `d:/ymir work/${base}/${folder}`;
+    if (!resolveAsset(`${dir}/${folder}.gr2`)) continue;
+    let wait = null;
+    const mot = resolveAsset(`${dir}/motlist.txt`);
+    if (mot) {
+      const hit = fs.readFileSync(mot, "latin1").match(/^\s*GENERAL\s+WAIT\s+(\S+)\.msa/mi);
+      if (hit && resolveAsset(`${dir}/${hit[1]}.gr2`)) wait = `${dir}/${hit[1]}.gr2`;
+    }
+    const out = path.join(CACHE, "mob", base, folder);
+    return { body: await convertGr2(`${dir}/${folder}.gr2`, path.join(out, "body")), wait: wait && await convertGr2(wait, path.join(out, "wait")) };
+  }
+  return null;
+}
+ipcMain.handle("mob:model", (_, vnum) => mobModel(vnum));
 ipcMain.handle("spawns:get", (_, dir) => readSpawnFile(dir));
 ipcMain.handle("spawns:save", (_, dir, spawns, town) => {
   const f = path.join(dir, "_studio", "spawns.json");
