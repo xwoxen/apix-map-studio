@@ -65,6 +65,8 @@ Prvé spustenie po inštalácii: `npm install` (Electron musí mať povolený in
   (každý kus sadne na terén), Ctrl+D duplikuje, Del maže.
 - **Prefaby**: skupinu ulož v paneli Vlastnosti ako prefab; v knižnici pod „Prefaby“ ju vložíš celú
   (R otočí o 45°, Shift + klik viac kusov). Ukladajú sa do `%APPDATA%\APIX Map Studio\prefabs`.
+- **PvP aréna** (`node mapgen/mapgen.js mapgen/maps/arena.js` → `apix_pvp_arena`): izolovaná dueľová plocha
+  za múrom a priekopou (blokované), tribúny a námestie bez PvP, cesta, jazero a les v údolí.
 - Overené aj mapy 2×2 (dungeon 512×512 m, terény na seba nadväzujú).
 
 ### Kontrola a export (fáza 3, tlačidlá v hornej lište)

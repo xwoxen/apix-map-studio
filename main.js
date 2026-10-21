@@ -73,8 +73,17 @@ function walk(dir, out) {
 function getLibrary() {
   if (library) return library;
   const files = [];
+  // every pack folder with property/ counts (the main "Property" pack has no ymir work/), in Index order
   const dirs = [path.join(EDITOR_ROOT, "property")];
-  for (const root of getAssetRoots()) if (fs.existsSync(path.join(root, "property"))) dirs.push(path.join(root, "property"));
+  const packs = [];
+  try {
+    for (const line of fs.readFileSync(path.join(PACK_ROOT, "Index"), "utf8").split(/\r?\n/)) { const n = line.split("\t")[0].trim(); if (n) packs.push(path.join(PACK_ROOT, n)); }
+    for (const n of fs.readdirSync(PACK_ROOT)) packs.push(path.join(PACK_ROOT, n));
+  } catch { /* no client pack folder */ }
+  for (const root of [...packs, ...getAssetRoots()]) {
+    const p = path.join(root, "property");
+    if (fs.existsSync(p) && !dirs.some((d) => d.toLowerCase() === p.toLowerCase())) dirs.push(p);
+  }
   for (const d of dirs) { try { walk(d, files); } catch { /* unreadable folder */ } }
   library = new Map();
   for (const file of files) {
