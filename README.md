@@ -32,6 +32,8 @@ Prvé spustenie po inštalácii: `npm install` (Electron musí mať povolený in
 - Voľné pokladanie: objekt sadne na to, čo je pod kurzorom (terén alebo iný objekt, napr. strecha), pri
   pohľade do oblohy sa položí do vzduchu. **Alt + koliesko** alebo **PgUp / PgDn** ho zdvihne / zníži
   (Shift po 2 m), **Home** ho vráti na povrch. Platí aj pre prefaby.
+- Pri pokladaní ukazuje žltý obrys stopy objektu na zemi, **Shift+R** otáča o 15° (R o 45°) a pri vybraných
+  objektoch zarovná rotáciu na 15° mriežku. Knižnica má zoznam **Posledné** (naposledy položené objekty).
 - Výber kliknutím, posun (W) a rotácia (E) úchytmi, položenie na terén (G), duplikovanie (Ctrl+D),
   mazanie (Del), späť/znova (Ctrl+Z / Ctrl+Y), presné hodnoty v paneli Vlastnosti.
 - Uloženie (Ctrl+S) zapíše `AreaData.txt` každého terénu presne vo formáte editora
@@ -94,7 +96,8 @@ Nástroje: `mapstudio_launch`, `_status`, `_open_map`, `_list_objects`, `_search
 `_add_objects`, `_update_objects`, `_delete_objects`, `_terrain_height`, `_paint`, `_add_texture`,
 `_ground_all_objects`, `_undo`, `_redo`, `_save`, `_screenshot` (3D pohľad do PNG, voliteľne s kamerou),
 `_window_screenshot`, `_check_map`, `_export`, `_new_map` (šablóny empty / island / dungeon),
-`_list_environments`, `_set_environment`, `_list_prefabs`, `_save_prefab`, `_place_prefab`. Pozície sú v metroch od severozápadného rohu mapy
+`_list_environments`, `_set_environment`, `_list_prefabs`, `_save_prefab`, `_place_prefab`, `_list_spawns`,
+`_add_spawns`, `_update_spawns`, `_delete_spawns`, `_set_town`, `_game_export` (staging do `_map_exports`, nenasadzuje). Pozície sú v metroch od severozápadného rohu mapy
 (x na východ, y na juh, z výška).
 
 ### Ovládanie kamery (noclip)
@@ -107,12 +110,25 @@ na mieste, **stredné** = posun, **koliesko** = let dopredu/dozadu. Rýchlosť s
 
 ### Postava (kláves P alebo tlačidlo „Postava“)
 
-Klikni na terén a postaví sa tam bojovník (model a animácie státia, chôdze a behu z `pc/warrior`,
-prevedené do `model-cachepc`). **WASD** beh, **Shift** chôdza, **pravé tlačidlo** otáča kameru,
-**koliesko** približuje, **P** postaví postavu inam, **Esc** späť do editora.
-Blokované miesta a voda (atribúty mapy) zastavia postavu ako na serveri; **Noclip (N)** cez ne pustí
-a postava chodí po hladine. Objekty zatiaľ nie sú pevné (kolízne tvary objektov sa nenačítavajú).
-Test: `test/walk-demo.js` na mape `apix_pvp_arena`.
+Klikni na terén a postaví sa tam postava – v lište vyberieš **bojovníka, ninju, suru alebo šamana** (model
+začiatočníka, vlasy a animácie státia, chôdze a behu z `pc/<trieda>`, prevedené do `model-cache\pc\<trieda>`).
+**WASD** beh, **Shift** chôdza, **medzerník** skok, **pravé tlačidlo** otáča kameru, **koliesko** približuje,
+**P** postaví postavu inam, **Esc** späť do editora.
+Blokované miesta, voda a **objekty** (ich kolízne tvary z `.mdatr`, rovnaké ako v exporte pre server) postavu
+zastavia, pri prekážke sa šmýka pozdĺž nej; **Noclip (N)** cez všetko pustí a postava chodí po hladine.
+Testy: `test/walk-demo.js`, `test/walk-objects-demo.js` na mape `apix_pvp_arena`.
+
+### Spawny (karta „Spawny“)
+
+- Zoznam monštier a NPC z `mob_proto.txt` servera s anglickými menami (server sa len číta). Vyber monštrum,
+  nastav druh (monštrá, skupina, agresívna skupina, NPC), počet, polomer a respawn a **klikni na terén**.
+- Značka ukazuje model monštra v jeho čakacej animácii, štítok a polomer na teréne. Klik na značku ju vyberie
+  (polia ju upravia), **ťahaním** sa presunie, **Del** zmaže, Späť / Znova funguje.
+- **Town** (kde sa hráči objavia, `Town.txt`) nastavíš tlačidlom a klikom na terén (zlatá značka).
+- Ctrl+S uloží spawny aj Town do `<mapa>\_studio\spawns.json`; export z nich spraví `regen.txt` a `npc.txt`.
+- **Zóny (Z)**: atribúty servera cez celý terén (červená blokované, modrá voda, zelená bez PvP, bez farby PvP).
+- Kontrola mapy hlási chýbajúci Town, Town na blokovanej bunke alebo v PvP zóne, spawny na blokovaných bunkách,
+  NPC v PvP zóne a monštrá do 10 m od Townu.
 
 ## Súradnice
 
@@ -132,24 +148,34 @@ načítaní a uložení nezmenia.
 
 ### Export do hry (fáza 5)
 
-Najprv v Map Studiu **Export** (minimapa + atlas), potom:
+Najjednoduchšie tlačidlom **Do hry…**: navrhne index mapy a voľné miesto vo svete (číta `map/index`, `Setting.txt`
+máp servera a `atlasinfo.txt` klienta; mapa, ktorá už v hre je, si ponechá svoj slot), uloží mapu, vykreslí
+minimapu, atlas a tiene a pripraví súbory do `APIX\_map_exports\<mapa>_<čas>` s reportom. **Nič nenasadzuje.**
+
+Z príkazového riadku (najprv v Map Studiu **Export**):
 
 ```
-node mapgen/export-game.js <priečinok mapy> --index 90 --base 665600 25600 --town 128 182 --goto arena --out .._map_exports<mapa>_<dátum>
+node mapgen/export-game.js <priečinok mapy> --index 90 --base 665600 25600 --goto arena --out ..\_map_exports\<mapa>_<dátum>
 ```
+
+Voľby: `--town <x> <y>` (inak Town z karty Spawny, inak stred mapy s varovaním), `--no-object-collision`.
 
 Pripraví do stagingu (mimo hry nič nemení):
 - `server/<mapa>/`: `Setting.txt` (BasePosition), `Town.txt` (spawn v metroch), `server_attr`
-  (sektory 64 m, bunky 0,5 m, LZO; preložené z `attr.atr` – blokované, voda, bez PvP), prázdne regen/npc/boss/stone,
-- `client/<mapa>/`: pack s mapou (+ `shadowmap.raw/.dds` plne osvetlené), sadou textúr a atlasom,
-- `manifest.json`: hashe súborov a kroky nasadenia (index, GAME_MAP_ALLOW, /goto, pack Index, atlasinfo).
+  (sektory 64 m, bunky 0,5 m, LZO; preložené z `attr.atr` – blokované, voda, bez PvP – plus **OBJECT (128)** pod
+  objektmi podľa ich kolíznych tvarov z `.mdatr` klienta do výšky 2,2 m, stromy kmeňom), `regen.txt` a `npc.txt`
+  zo spawnov, prázdne boss/stone,
+- `client/<mapa>/`: pack s mapou, **tieňmi** (`shadowmap.raw/.dds` vypočítané Exportom zo slnka prostredia
+  na teréne aj modeloch; bez Exportu plne osvetlené), sadou textúr a atlasom,
+- `server_attr_preview.png` (1 px = 0,5 m: červená blok, modrá voda, zelená bez PvP, žltá objekty),
+- `manifest.json`: hashe súborov, počty buniek, spawny, varovania a kroky nasadenia.
 
-Kontroly: BasePosition násobok 25600, spawn nesmie byť na blokovanej bunke, `server_attr` sa dá dekódovať
-(`mapgen/lzo.js`) a sedí bunka po bunke s `attr.atr`.
+Kontroly: BasePosition násobok 25600, Town nesmie byť na blokovanej bunke ani pod objektom, `server_attr` sa dá
+dekódovať (`mapgen/lzo.js`) a sedí bunka po bunke s `attr.atr` – overuje `npm test` (`test/export.js`).
 
 ## Ďalšie fázy
 
 2. ~~Štetce terénu (výška, textúry, voda, atribúty).~~ Hotové.
 3. ~~Kontrola, minimapa a atlas, MCP pre Clauda.~~ Hotové.
 4. ~~Stromy, prostredie, nová mapa so šablónami, výber viacerých objektov, prefaby.~~ Hotové.
-5. ~~Mapa do hry: serverové súbory (`server_attr`, `Town.txt`), pack klienta.~~ Export hotový; ďalej spawny (`regen.txt`), kolízie objektov na serveri (OBJECT v `server_attr`), tiene objektov.
+5. ~~Mapa do hry: serverové súbory, pack klienta, spawny, kolízie objektov, tiene.~~ Hotové.
