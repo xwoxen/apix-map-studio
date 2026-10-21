@@ -3,9 +3,11 @@
 // entrance road from the south. Distances below are cells (1 cell = 2 m) from the map centre.
 
 const G = 32767 + 1000;                               // ground level (raw, 1 m = 200)
-const R = { floor: 11, wall: 12.5, moat: 15.5, stands: 23, plaza: 31 };
-const STEP = 240;                                     // 1.2 m per stand step
-const TEX = { grass: 1, grassDark: 2, dirt: 3, tile: 4, stone: 5, cliff: 6, sand: 7 };
+const R = { floor: 10.6, wall: 12.0, moat: 13.8, stands: 22.2, plaza: 31 };
+// spectator rows right behind the moat: [inner, outer] radius of each 3 m bench row, 1 m higher per row
+const ROWS = [[14.2, 15.7], [16.2, 17.7], [18.2, 19.7], [20.2, R.stands]];
+const ROW_H = (i) => G + 300 + i * 200;
+const TEX = { grass: 1, grassDark: 2, dirt: 3, tile: 4, stone: 5, cliff: 6, sand: 7, row: 8 };
 const CRC = {
   brazier: 2471529475, flag: 2401125466, pillar: 796958272, pillar2: 1780937370, statue: 1820216212,
   tent: 68844411, tent2: 3760465448, campfire: 3801685253, lamp: 3979323067, light: 459116056,
@@ -23,9 +25,9 @@ function create({ name = "apix_pvp_arena", seed = 9090 } = {}) {
 
   // radial profile as [radius in cells, raw height] knots, smoothstep between them (no 2 m stair edges)
   const PROFILE = [
-    [0, G], [10.6, G], [11.4, G + 600], [12.1, G + 600], [13.0, G - 500], [14.8, G - 500],   // floor, wall, moat
-    [15.6, G + STEP], [17.6, G + STEP], [18.3, G + 2 * STEP], [20.3, G + 2 * STEP],          // three stand steps
-    [21.0, G + 3 * STEP], [R.stands, G + 3 * STEP], [R.stands + 3.5, G]                       // walk down to the plaza
+    [0, G], [R.floor, G], [11.3, G + 600], [R.wall, G + 600], [12.6, G - 500], [13.6, G - 500],   // floor, wall, moat
+    ...ROWS.flatMap(([a, b], i) => [[a, ROW_H(i)], [b, ROW_H(i)]]),                               // bench rows
+    [R.stands + 3.3, G]                                                                            // walk down to the plaza
   ];
   function profile(d) {
     for (let i = 1; i < PROFILE.length; i++) {
@@ -51,7 +53,7 @@ function create({ name = "apix_pvp_arena", seed = 9090 } = {}) {
     if (d <= R.floor - 0.3) return TEX.tile;
     if (d <= R.wall + 0.2) return TEX.cliff;
     if (d <= R.moat) return TEX.sand;
-    if (d <= R.stands) return TEX.stone;
+    if (d <= R.stands) return ROWS.some(([a, b]) => d >= a + 0.15 && d <= b - 0.1) ? TEX.row : TEX.stone;   // light rows, dark risers
     if (d <= R.plaza) return TEX.dirt;
     if (road(x, y)) return TEX.dirt;
     if (lakeD(x, y) < LAKE.r + 3.5) return TEX.sand;
@@ -84,9 +86,9 @@ function create({ name = "apix_pvp_arena", seed = 9090 } = {}) {
     const ring = (n, r, off = 0) => Array.from({ length: n }, (_, i) => { const a = off + (i / n) * Math.PI * 2; return [C.x + Math.cos(a) * r, C.y + Math.sin(a) * r, a]; });
     const deg = (a) => (a * 180) / Math.PI;
 
-    for (const [x, y, a] of ring(8, (R.floor + R.wall) / 2, Math.PI / 8)) add(CRC.brazier, x, y, deg(a), 1);       // fire on the wall
-    for (const [x, y, a] of ring(12, R.stands - 0.6)) add(CRC.pillar, x, y, deg(a) + 90, 1);                     // stand rim columns
-    for (const [x, y, a] of ring(8, R.stands + 1.5, Math.PI / 8)) add(CRC.flag, x, y, deg(a) + 90, 1);           // banners around the stands
+    for (const [x, y, a] of ring(8, 11.65, Math.PI / 8)) add(CRC.brazier, x, y, deg(a), 1);       // fire on the wall
+    for (const [x, y, a] of ring(12, R.stands - 0.4)) add(CRC.pillar, x, y, deg(a) + 90, 1);                     // columns on the top row
+    for (const [x, y, a] of ring(8, R.stands + 2, Math.PI / 8)) add(CRC.flag, x, y, deg(a) + 90, 1);             // banners behind the stands
     for (const [x, y, a] of ring(16, R.plaza - 1.2, Math.PI / 16)) {                                             // plaza lamps, road gap kept
       if (Math.abs(x - C.x) < 4 && y > C.y) continue;
       add(CRC.lamp, x, y, deg(a), 1);
@@ -131,7 +133,8 @@ function create({ name = "apix_pvp_arena", seed = 9090 } = {}) {
       { file: "d:/ymir work/terrainmaps/12temple/stone_tile_001.dds" },
       { file: "d:/ymir work/terrainmaps/12temple/stone_02.dds" },
       { file: "d:/ymir work/terrainmaps/12temple/5st_cliff_001.dds" },
-      { file: "d:/ymir work/terrainmaps/a/beach/beach sand 01.dds" }
+      { file: "d:/ymir work/terrainmaps/a/beach/beach sand 01.dds" },
+      { file: "d:/ymir work/terrainmaps/12temple/temple_stone01.dds" }
     ],
     environment: "a1.msenv",
     // meters from the map's north-west corner, for Town.txt and later duel quests
