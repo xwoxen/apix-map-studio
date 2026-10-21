@@ -111,6 +111,34 @@ function treeNode(info) {
   return holder;
 }
 
+// Granny models arrive as SkinnedMesh. Map objects never animate, so each one is baked into a plain Mesh in
+// its posed shape: bounds, picking and the selection box then come from real geometry (a fresh skeleton's
+// zero bone matrices otherwise get cached as an empty bounding box and the object can't be clicked).
+function bakeSkinned(model) {
+  model.updateMatrixWorld(true);
+  const skinned = [];
+  model.traverse((m) => { if (m.isSkinnedMesh) skinned.push(m); });
+  const v = new THREE.Vector3();
+  for (const m of skinned) {
+    m.skeleton.update();
+    const src = m.geometry, pos = src.attributes.position, out = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) { m.getVertexPosition(i, v); out[i * 3] = v.x; out[i * 3 + 1] = v.y; out[i * 3 + 2] = v.z; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(out, 3));
+    for (const name of ["uv", "uv1", "uv2", "color"]) if (src.attributes[name]) geo.setAttribute(name, src.attributes[name]);
+    if (src.index) geo.setIndex(src.index);
+    for (const g of src.groups) geo.addGroup(g.start, g.count, g.materialIndex);
+    geo.computeVertexNormals();
+    geo.computeBoundingBox(); geo.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geo, m.material);
+    mesh.name = m.name;
+    mesh.position.copy(m.position); mesh.quaternion.copy(m.quaternion); mesh.scale.copy(m.scale);
+    m.parent.add(mesh);
+    m.parent.remove(m);
+  }
+  return model;
+}
+
 // Textures always live next to the cached m.fbx under their bare file name, whatever path the FBX stored.
 function loadFbx(url) {
   const base = url.slice(0, url.lastIndexOf("/") + 1);
@@ -126,7 +154,7 @@ export function template(crc) {
     if (info.kind === "tree") return { node: treeNode(info), info };
     if (info.kind === "fbx") {
       try {
-        const model = await loadFbx(info.url);
+        const model = bakeSkinned(await loadFbx(info.url));
         model.traverse((m) => {
           if (m.isMesh) {
             const mats = Array.isArray(m.material) ? m.material : [m.material];

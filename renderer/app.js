@@ -731,7 +731,7 @@ window.addEventListener("pointerup", (e) => {
 /* ---------- keyboard & buttons ---------- */
 
 window.addEventListener("keydown", (e) => {
-  if (e.target.matches("input")) return;
+  if (e.target.matches && e.target.matches("input, select, textarea")) return;
   const k = e.key.toLowerCase();
   if (k === "[" || k === "]") { const r = $("radius"); r.value = Number(r.value) + (k === "]" ? 2 : -2); r.dispatchEvent(new Event("input")); return; }
   if (k === "t" && !e.ctrlKey) { setMainMode(mode === "terrain" ? "objects" : "terrain"); return; }
@@ -1102,6 +1102,19 @@ window.__studio = {
   },
   setMainMode, setTool, save, undo, redo,
   brush, get model() { return heights; }, get objects() { return objects; },
+  // what a click at client (x, y) would hit: object ids (with the mesh name) in hit order
+  pickAt(x, y) { return pick({ clientX: x, clientY: y }, [layer.root]).map((h) => ({ id: h.object.userData.id, mesh: h.object.name || h.object.type, dist: +h.distance.toFixed(1) })); },
+  nodeInfo(id) {
+    const n = layer.nodes.get(id);
+    if (!n) return null;
+    let meshes = 0, withId = 0;
+    n.traverse((m) => { if (m.isMesh) { meshes++; if (m.userData.id === id) withId++; } });
+    const box = new THREE.Box3().setFromObject(n), c = box.getCenter(new THREE.Vector3()).project(camera), r = renderer.domElement.getBoundingClientRect();
+    let skinned = 0; n.traverse((m) => { if (m.isSkinnedMesh) skinned++; });
+    return { children: n.children.length, meshes, withId, skinned, parent: n.parent ? n.parent.name : null,
+      boxSize: box.getSize(new THREE.Vector3()).toArray().map((v) => +v.toFixed(1)), origin: toScene(objects.find((o) => o.id === id)).toArray().map((v) => +v.toFixed(1)),
+      boxCenter: box.getCenter(new THREE.Vector3()).toArray().map((v) => +v.toFixed(1)), boxScreen: { x: r.left + (c.x + 1) / 2 * r.width, y: r.top + (1 - c.y) / 2 * r.height } };
+  },
   // client (window) coordinates of an object, for tests that simulate mouse clicks
   screenPos(id) {
     const o = objects.find((x) => x.id === id), r = renderer.domElement.getBoundingClientRect();
