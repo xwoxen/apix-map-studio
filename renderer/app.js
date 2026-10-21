@@ -686,7 +686,7 @@ renderer.domElement.addEventListener("pointerup", (e) => {
     if (!e.shiftKey) { stopPlacing(); select(o.id); }
     return;
   }
-  if (marquee) return;
+  if (marquee && marquee.moved) return;          // a Shift+drag rectangle, not a click
   const hit = pick(e, [layer.root])[0];
   if (e.shiftKey) { if (hit) select(hit.object.userData.id, { add: true, toggle: true }); return; }
   select(hit ? hit.object.userData.id : null);
@@ -979,7 +979,7 @@ const API = {
   status() {
     return map ? {
       map: map.name, dir: map.dir, size: map.size, sizeMeters: [map.size[0] * 256, map.size[1] * 256],
-      objects: objects.length, unsaved: { objects: dirty, terrain: heights.isDirty }, mode, tool: brush.tool,
+      objects: objects.length, selected: [...selection], unsaved: { objects: dirty, terrain: heights.isDirty }, mode, tool: brush.tool,
       textures: heights.textures.map((t) => ({ index: t.index, file: t.file, found: Boolean(t.url) })), modelsLoading: layer.pending
     } : { map: null };
   },
@@ -1102,6 +1102,12 @@ window.__studio = {
   },
   setMainMode, setTool, save, undo, redo,
   brush, get model() { return heights; }, get objects() { return objects; },
+  // client (window) coordinates of an object, for tests that simulate mouse clicks
+  screenPos(id) {
+    const o = objects.find((x) => x.id === id), r = renderer.domElement.getBoundingClientRect();
+    const p = toScene(o).add(new THREE.Vector3(0, 1, 0)).project(camera);
+    return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height, visible: p.z < 1 && Math.abs(p.x) < 1 && Math.abs(p.y) < 1 };
+  },
   async addTexture(game) { const e = heights.addTexture(game, await window.studio.textureUrl(game)); brush.texture = e.index; renderPalette(); return e.index; },
   stroke(points, opts = {}) {
     Object.assign(brush, opts);
