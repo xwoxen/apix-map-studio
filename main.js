@@ -6,6 +6,7 @@ const { execFile } = require("child_process");
 const { pathToFileURL } = require("url");
 const { terrainKey, parseAreaData, saveObjects, parseTextureSet, saveTerrain } = require("./maplib");
 const { parseEnvironment } = require("./envlib");
+const { levelsFromLight, shadowRaw, shadowDds } = require("./mapgen/shadow");
 
 const { APIX_ROOT, EDITOR_ROOT, PACK_ROOT, getAssetRoots, resolveAsset, getLibrary } = require("./assets");
 const GRANNY_EXPORTER = path.join(APIX_ROOT, "_codex_granny_compiled", "GrannyExporter.exe");
@@ -384,6 +385,8 @@ function writeExport(dir, files) {
       fs.copyFileSync(dest, path.join(backup, f.rel));
     }
     if (f.kind === "dds") fs.writeFileSync(dest, ddsBgrx(f.width, f.height, f.rgba));
+    else if (f.kind === "shadow-raw") fs.writeFileSync(dest, shadowRaw(levelsFromLight(f.light)));
+    else if (f.kind === "shadow-dds") fs.writeFileSync(dest, shadowDds(levelsFromLight(f.light)));
     else if (f.kind === "png") { fs.writeFileSync(dest, Buffer.from(f.png.replace(/^data:image\/png;base64,/, ""), "base64")); preview = assetUrl(dest); }
     else fs.writeFileSync(dest, f.text, "latin1");
     written.push(f.rel);

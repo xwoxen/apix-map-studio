@@ -15,6 +15,7 @@ const crypto = require("crypto");
 const zlib = require("zlib");
 const { compress } = require("./lzo");
 const { objectCells } = require("./collision");
+const { litLevels, shadowRaw, shadowDds } = require("./shadow");
 const { parseAreaData } = require("../maplib");
 
 const TERRAIN = 25600;                 // world units per terrain (CellScale 200 × 128 cells)
@@ -31,22 +32,6 @@ function readSetting(dir) {
 function findFile(dir, name) {
   const hit = fs.readdirSync(dir).find((f) => f.toLowerCase() === name.toLowerCase());
   return hit ? path.join(dir, hit) : null;
-}
-
-// Fully lit terrain shadow: 256×256 R5G5B5 0x7FFF and a white 256×256 DXT1 texture (as WorldEditor writes
-// for a terrain without shadows; object shadows are not baked yet).
-function shadowRaw() { const b = Buffer.alloc(256 * 256 * 2); for (let i = 0; i < b.length; i += 2) b.writeUInt16LE(0x7fff, i); return b; }
-function shadowDds() {
-  const h = Buffer.alloc(128);
-  h.write("DDS ", 0, "latin1");
-  // header fields as in the shipped Sands shadow maps
-  h.writeUInt32LE(124, 4); h.writeUInt32LE(0x80000, 8); h.writeUInt32LE(256, 12); h.writeUInt32LE(256, 16);
-  h.writeUInt32LE(32768, 20); h.writeUInt32LE(1, 28);
-  h.writeUInt32LE(32, 76); h.writeUInt32LE(4, 80); h.write("DXT1", 84, "latin1");
-  h.writeUInt32LE(0x1000, 108);
-  const body = Buffer.alloc(32768);
-  for (let i = 0; i < body.length; i += 8) { body.writeUInt16LE(0xffff, i); body.writeUInt16LE(0xffff, i + 2); }
-  return Buffer.concat([h, body]);
 }
 
 // server_attr: int32 width, height in sectors; per sector int32 size + LZO of 128×128 DWORD cells (0.5 m).
@@ -160,6 +145,7 @@ function exportGame(mapDir, { index, base, out, town, gotoAlias, editorRoot, obj
   const clientSetting = setting.text.replace(/^BasePosition\s+.*$/m, `BasePosition\t${base[0]}\t${base[1]}`);
   put(`${pack}/${name}/setting.txt`, Buffer.from(clientSetting, "latin1"));
   put(`${pack}/${name}/mapproperty.txt`, fs.readFileSync(findFile(mapDir, "MapProperty.txt")));
+  const shadows = {};
   for (let ty = 0; ty < sh; ty++) for (let tx = 0; tx < sw; tx++) {
     const key = `${String(tx).padStart(3, "0")}${String(ty).padStart(3, "0")}`, t = path.join(mapDir, key);
     for (const f of CLIENT_TERRAIN_FILES) {
@@ -167,8 +153,12 @@ function exportGame(mapDir, { index, base, out, town, gotoAlias, editorRoot, obj
       if (!src) throw new Error(`missing ${key}/${f}${f === "minimap.dds" ? " (run Export in Map Studio first)" : ""}`);
       put(`${pack}/${name}/${key}/${f}`, fs.readFileSync(src));
     }
-    put(`${pack}/${name}/${key}/shadowmap.raw`, shadowRaw());
-    put(`${pack}/${name}/${key}/shadowmap.dds`, shadowDds());
+    // shadows baked by Map Studio's Export (sun of the map's environment), otherwise a fully lit terrain
+    const raw = findFile(t, "shadowmap.raw"), dds = findFile(t, "shadowmap.dds");
+    const baked = raw && dds && fs.statSync(raw).size === 131072;
+    put(`${pack}/${name}/${key}/shadowmap.raw`, baked ? fs.readFileSync(raw) : shadowRaw(litLevels()));
+    put(`${pack}/${name}/${key}/shadowmap.dds`, baked ? fs.readFileSync(dds) : shadowDds(litLevels()));
+    shadows[key] = baked ? "baked" : "lit";
   }
   const tsName = setting.textureSet.replace(/\\/g, "/").split("/").pop();
   if (tsName.toLowerCase() !== `${name}.txt`) throw new Error(`texture set ${setting.textureSet} must be textureset\\${name}.txt`);
@@ -181,6 +171,7 @@ function exportGame(mapDir, { index, base, out, town, gotoAlias, editorRoot, obj
 
   const manifest = {
     map: name, index, basePosition: base, mapSize: setting.size, town, environment: setting.environment,
+    shadows,
     serverAttr: { sectors: attr.sectors, cells: attr.cells, objectCollision: attr.collision || "off" },
     deploy: {
       server: [

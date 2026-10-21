@@ -983,6 +983,58 @@ function renderTopDown(x0, z0, w, h, px, py) {
   return out;
 }
 
+// Shadow of one terrain for the client's shadowmap.raw/.dds: the environment's sun casts the terrain and every
+// model onto the ground; a top-down render at 1 px per meter returns the light amount (1 = sun, 0 = shadow).
+// Models cast with their own materials but write no colour or depth, so they don't cover the ground.
+function renderShadow(tx, ty) {
+  const x0 = tx * 256, z0 = ty * 256, centre = new THREE.Vector3(x0 + 128, heights.at(x0 + 128, z0 + 128), z0 + 128);
+  const temp = new THREE.Scene();
+  const light = new THREE.DirectionalLight(0xffffff, 1);
+  light.position.copy(centre).addScaledVector(sun.position.clone().normalize(), 1500);
+  light.target.position.copy(centre);
+  light.castShadow = true;
+  light.shadow.mapSize.set(4096, 4096);
+  Object.assign(light.shadow.camera, { left: -190, right: 190, top: 190, bottom: -190, near: 1, far: 4000 });
+  light.shadow.camera.updateProjectionMatrix();
+  light.shadow.bias = -0.0004; light.shadow.normalBias = 0.08;
+  temp.add(light, light.target);
+  const groundMat = new THREE.ShadowMaterial({ color: 0x000000, opacity: 1 });
+  for (const m of view.group.children) {
+    if (!m.isMesh) continue;
+    const g = new THREE.Mesh(m.geometry, groundMat);
+    g.matrixAutoUpdate = false; g.matrix.copy(m.matrixWorld);
+    g.castShadow = g.receiveShadow = true;
+    temp.add(g);
+  }
+  const parent = layer.root.parent, casters = [];
+  const mats = new Map();
+  layer.root.traverse((o) => {
+    if (!o.isMesh) return;
+    casters.push([o, o.castShadow]); o.castShadow = true;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (!mats.has(m)) { mats.set(m, [m.colorWrite, m.depthWrite]); m.colorWrite = false; m.depthWrite = false; }
+  });
+  temp.add(layer.root);
+  const prevShadow = renderer.shadowMap.enabled, prevType = renderer.shadowMap.type, prevClear = renderer.getClearColor(new THREE.Color()), prevAlpha = renderer.getClearAlpha();
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.setClearColor(0xffffff, 1);
+  const cam = new THREE.OrthographicCamera(-128, 128, 128, -128, 1, 10000);
+  cam.position.set(x0 + 128, 3000, z0 + 128); cam.up.set(0, 0, -1); cam.lookAt(x0 + 128, 0, z0 + 128);
+  const target = new THREE.WebGLRenderTarget(256, 256);
+  renderer.setRenderTarget(target);
+  renderer.render(temp, cam);
+  const raw = new Uint8Array(256 * 256 * 4);
+  renderer.readRenderTargetPixels(target, 0, 0, 256, 256, raw);
+  renderer.setRenderTarget(null);
+  renderer.shadowMap.enabled = prevShadow; renderer.shadowMap.type = prevType; renderer.setClearColor(prevClear, prevAlpha);
+  parent.add(layer.root);
+  for (const [o, cast] of casters) o.castShadow = cast;
+  for (const [m, [c, d]] of mats) { m.colorWrite = c; m.depthWrite = d; }
+  light.shadow.dispose(); target.dispose(); groundMat.dispose();
+  const out = new Float32Array(256 * 256);
+  for (let r = 0; r < 256; r++) for (let c = 0; c < 256; c++) out[r * 256 + c] = raw[((255 - r) * 256 + c) * 4] / 255;
+  return out;
+}
+
 function rgbaToPng(rgba, w, h) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
   c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(rgba), w, h), 0, 0);
@@ -992,9 +1044,12 @@ function rgbaToPng(rgba, w, h) {
 async function exportMaps() {
   requireMap();
   await waitModels();
-  const files = [];
+  const files = [], shade = [];
   for (const c of heights.chunks.values()) {
     files.push({ rel: `${c.key}/minimap.dds`, kind: "dds", width: 256, height: 256, rgba: renderTopDown(c.tx * 256, c.ty * 256, 256, 256, 256, 256) });
+    const light = renderShadow(c.tx, c.ty);
+    files.push({ rel: `${c.key}/shadowmap.raw`, kind: "shadow-raw", light }, { rel: `${c.key}/shadowmap.dds`, kind: "shadow-dds", light });
+    shade.push(light);
   }
   const per = Math.max(64, Math.floor(1024 / Math.max(map.size[0], map.size[1])) & ~3);
   const aw = per * map.size[0], ah = per * map.size[1];
@@ -1004,7 +1059,8 @@ async function exportMaps() {
   files.push({ rel: "_export/atlas/atlas.sub", kind: "text", text: `title subImage\r\nversion 1.0\r\nimage "${ddsName}"\r\nleft 0\r\ntop 0\r\nright ${aw}\r\nbottom ${ah}\r\n` });
   files.push({ rel: "_export/atlas/preview.png", kind: "png", png: rgbaToPng(atlas, aw, ah) });
   const r = await window.studio.exportWrite(map.dir, files);
-  return { minimaps: heights.chunks.size, atlas: `${aw}x${ah}`, folder: r.folder, files: r.files, backup: r.backup, preview: r.preview };
+  const lit = shade.length ? shade.reduce((a, l) => a + l.reduce((s, v) => s + v, 0) / l.length, 0) / shade.length : 1;
+  return { minimaps: heights.chunks.size, shadows: shade.length, litShare: +lit.toFixed(3), atlas: `${aw}x${ah}`, folder: r.folder, files: r.files, backup: r.backup, preview: r.preview };
 }
 
 async function checkMap() {
@@ -1245,7 +1301,7 @@ window.__studio = {
     return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height, visible: p.z < 1 && Math.abs(p.x) < 1 && Math.abs(p.y) < 1 };
   },
   walker,
-  startWalking, stopWalking,
+  startWalking, stopWalking, renderShadow,
   async addTexture(game) { const e = heights.addTexture(game, await window.studio.textureUrl(game)); brush.texture = e.index; renderPalette(); return e.index; },
   stroke(points, opts = {}) {
     Object.assign(brush, opts);
