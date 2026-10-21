@@ -1,0 +1,23 @@
+{
+  "name": "apix-map-studio",
+  "productName": "APIX Map Studio",
+  "version": "0.1.0",
+  "description": "Editor máp pre APIX (Metin2): terén, objekty, uloženie do formátu WorldEditora",
+  "main": "main.js",
+  "author": "APIX",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/roundtrip.js"
+  },
+  "dependencies": {
+    "three": "0.169.0"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}

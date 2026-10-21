@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' apix:; script-src 'self' 'sha256-Bu6K9pm8PjPjknL6447hFiBPI75shvDKK4SCtLOS7Pk='; style-src 'self' 'unsafe-inline'; img-src 'self' apix: data: blob:; connect-src 'self' apix: data: blob:">
+<title>APIX Map Studio</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "three": "../node_modules/three/build/three.module.js", "three/addons/": "../node_modules/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<header class="toolbar">
+  <div class="brand">APIX <span>Map Studio</span></div>
+  <button type="button" id="btn-open" title="Otvoriť mapu (Ctrl+O)">Otvoriť</button>
+  <button type="button" id="btn-save" class="primary" title="Uložiť objekty (Ctrl+S)" disabled>Uložiť</button>
+  <span class="sep"></span>
+  <div class="seg" role="group" aria-label="Nástroj">
+    <button type="button" id="mode-move" aria-pressed="true" title="Posun (W)">Posun <kbd>W</kbd></button>
+    <button type="button" id="mode-rotate" aria-pressed="false" title="Rotácia (E)">Rotácia <kbd>E</kbd></button>
+  </div>
+  <label class="check" title="Objekt sa po posune položí na terén (G)"><input type="checkbox" id="snap" checked> Na terén <kbd>G</kbd></label>
+  <span class="sep"></span>
+  <button type="button" id="btn-undo" title="Späť (Ctrl+Z)" disabled>Späť</button>
+  <button type="button" id="btn-redo" title="Znova (Ctrl+Y)" disabled>Znova</button>
+  <div class="map-name" id="map-name">Žiadna mapa</div>
+</header>
+
+<main class="layout">
+  <aside class="panel library">
+    <div class="panel-head">
+      <h2>Objekty</h2>
+      <input type="search" id="lib-search" placeholder="Hľadať (napr. pine, wall, gate)" aria-label="Hľadať objekty">
+      <div class="chips" id="lib-types"></div>
+    </div>
+    <ul class="lib-list" id="lib-list"><li class="muted">Načítavam knižnicu…</li></ul>
+    <div class="preview" id="lib-preview" hidden>
+      <img id="pv-img" alt="Náhľad objektu">
+      <div class="pv-text"><b id="pv-name"></b><span id="pv-meta"></span></div>
+    </div>
+    <p class="hint" id="lib-hint">Klikni na objekt a potom na terén, kam ho chceš položiť. Shift + klik pokladá viac kusov, Esc ukončí.</p>
+  </aside>
+
+  <section class="viewport" id="viewport">
+    <div class="empty-state" id="empty-state">
+      <h1>Otvor mapu</h1>
+      <p>Vyber priečinok mapy z WorldEditora alebo z generátora, napríklad <code>apix_gen_ostrov</code>.</p>
+      <button type="button" class="primary" id="btn-open-2">Otvoriť mapu</button>
+    </div>
+    <div class="overlay" id="placing" hidden>Pokladáš: <b id="placing-name"></b> · klik = položiť · R = otočiť o 45° · Esc = koniec</div>
+  </section>
+
+  <aside class="panel inspector">
+    <div class="panel-head"><h2>Vlastnosti</h2></div>
+    <div id="inspector" class="inspector-body"><p class="muted">Klikni na objekt v mape.</p></div>
+    <div class="panel-head"><h2>Klávesy</h2></div>
+    <dl class="keys">
+      <dt>Ľavé tlačidlo</dt><dd>výber, otáčanie kamery</dd>
+      <dt>Pravé tlačidlo</dt><dd>posun kamery</dd>
+      <dt>Koliesko</dt><dd>priblíženie</dd>
+      <dt>W / E</dt><dd>posun / rotácia</dd>
+      <dt>Del</dt><dd>zmazať</dd>
+      <dt>Ctrl+D</dt><dd>duplikovať</dd>
+      <dt>F</dt><dd>zamerať vybraný</dd>
+      <dt>Ctrl+Z / Ctrl+Y</dt><dd>späť / znova</dd>
+    </dl>
+  </aside>
+</main>
+
+<footer class="status">
+  <span id="st-cursor">x – · y – · výška –</span>
+  <span id="st-objects">0 objektov</span>
+  <span id="st-models"></span>
+  <span id="st-msg" class="msg"></span>
+</footer>
+<script type="module" src="app.js"></script>
+</body>
+</html>
