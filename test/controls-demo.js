@@ -7,7 +7,7 @@
   const hold = async (k, ms) => { key("keydown", k); await wait(ms); key("keyup", k); await wait(50); };
   const fire = (type, x, y, target = canvas, shift = false) =>
     target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: type === "pointerup" ? 0 : 1, shiftKey: shift, pointerId: 1, pointerType: "mouse" }));
-  const target = async () => (await api("camera", {})).target;
+  const target = async () => (await api("camera", {})).position;
   const out = {};
 
   await api("camera", { x: 128, y: 150, distance: 80, yaw: 0, pitch: 50 });
@@ -15,8 +15,9 @@
   out.start = await target();
   await hold("w", 600); out.afterW = await target();      // north = smaller y (scene z)
   await hold("d", 600); out.afterD = await target();      // east = larger x
-  out.yawBefore = await api("camera", {});
-  await hold("q", 500);
+  const h0 = (await target())[1];
+  await hold("e", 500); out.wentUp = (await target())[1] > h0;
+  await hold("q", 500); out.wentDown = (await target())[1] < h0 + 50;
   out.movedNorth = out.afterW[2] < out.start[2];
   out.movedEast = out.afterD[0] > out.afterW[0];
 

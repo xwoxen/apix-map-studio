@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { FlyControls } from "./fly.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { TerrainModel, TerrainView } from "./terrain.js";
 import { TOOLS, paint, sample, attrMask, BrushCursor } from "./brush.js";
@@ -28,9 +28,7 @@ scene.add(sun);
 const environment = new Environment(scene, sun, hemi);
 let envName = "", envDirty = false, envList = null;
 
-const orbit = new OrbitControls(camera, renderer.domElement);
-orbit.enableDamping = true;
-orbit.maxPolarAngle = Math.PI * 0.49;
+const fly = new FlyControls(camera, renderer.domElement, (x, z) => (heights ? heights.at(x, z) : 0));
 const gizmo = new TransformControls(camera, renderer.domElement);
 gizmo.setSpace("world");
 scene.add(gizmo.getHelper ? gizmo.getHelper() : gizmo);
@@ -114,8 +112,8 @@ async function openMap(dir) {
   undoStack.length = redoStack.length = 0; dirty = false;
   select(null);
   const w = map.size[0] * 256, d = map.size[1] * 256;
-  orbit.target.set(w / 2, heights.at(w / 2, d / 2), d / 2);
   camera.position.set(w / 2, heights.at(w / 2, d / 2) + w * 0.55, d / 2 + w * 0.75);
+  fly.lookAt(new THREE.Vector3(w / 2, heights.at(w / 2, d / 2), d / 2));
   camera.far = Math.max(6000, w * 6); camera.updateProjectionMatrix();
   environment.apply(map.environment, view);
   envName = map.environment ? map.environment.name : ""; envDirty = false;
@@ -215,7 +213,7 @@ function setMode(m) {
 
 let dragBefore = null, dragStart = null;
 gizmo.addEventListener("dragging-changed", (e) => {
-  orbit.enabled = !e.value;
+  fly.enabled = !e.value;
   if (e.value) {
     dragBefore = snapshot();
     dragStart = { pivot: pivot.position.clone(), rot: pivot.rotation.y, items: selectedObjects().map((o) => ({ o, p: toScene(o), yaw: o.yaw })) };
@@ -270,8 +268,10 @@ function duplicateSelected() {
 function focusSelected() {
   const sel = selectedObjects();
   if (!sel.length) return;
-  const p = centroid(sel), off = camera.position.clone().sub(orbit.target).setLength(sel.length > 1 ? 70 : 40);
-  orbit.target.copy(p); camera.position.copy(p).add(off);
+  const p = centroid(sel), off = fly.forward().negate().setLength(sel.length > 1 ? 70 : 40);
+  if (off.y < 8) off.y = 8;
+  camera.position.copy(p).add(off);
+  fly.lookAt(p);
 }
 function groundSelected() {
   change(() => { for (const o of selectedObjects()) { const p = toScene(o); o.z = heights.at(p.x, p.z) * 100; } });
@@ -727,48 +727,17 @@ window.addEventListener("pointerup", (e) => {
 
 /* ---------- keyboard & buttons ---------- */
 
-/* WASD / arrows move the camera over the map, Q/E turn it, Shift = faster (like WorldEditor). */
-const held = new Set();
-const MOVE_KEYS = new Set(["w", "a", "s", "d", "q", "e", "arrowup", "arrowdown", "arrowleft", "arrowright"]);
-window.addEventListener("keyup", (e) => { held.delete(e.key.toLowerCase()); if (e.key === "Shift") held.delete("shift"); });
-window.addEventListener("blur", () => held.clear());
+/* Noclip flight (renderer/fly.js): keys are routed here so typing in inputs never moves the camera. */
+let shiftHeld = false;
+window.addEventListener("keyup", (e) => { fly.keyUp(e.key.toLowerCase()); if (e.key === "Shift") shiftHeld = false; });
+window.addEventListener("blur", () => { fly.clear(); shiftHeld = false; });
 const moveClock = new THREE.Clock();
-function moveCamera() {
-  const dt = Math.min(0.1, moveClock.getDelta());
-  if (!held.size || !map) return;
-  const has = (...k) => k.some((x) => held.has(x));
-  const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y = 0;
-  if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
-  fwd.normalize();
-  const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
-  const dist = camera.position.distanceTo(orbit.target);
-  const speed = Math.max(15, dist * 0.9) * (has("shift") ? 3 : 1) * dt;
-  const step = new THREE.Vector3();
-  if (has("w", "arrowup")) step.add(fwd);
-  if (has("s", "arrowdown")) step.sub(fwd);
-  if (has("d", "arrowright")) step.add(right);
-  if (has("a", "arrowleft")) step.sub(right);
-  if (step.lengthSq()) {
-    step.normalize().multiplyScalar(speed);
-    const W = map.size[0] * 256, D = map.size[1] * 256;
-    const nt = orbit.target.clone().add(step);
-    nt.x = Math.max(-20, Math.min(W + 20, nt.x)); nt.z = Math.max(-20, Math.min(D + 20, nt.z));
-    nt.y = heights.at(Math.max(0, Math.min(W, nt.x)), Math.max(0, Math.min(D, nt.z)));
-    camera.position.add(nt.clone().sub(orbit.target));
-    orbit.target.copy(nt);
-  }
-  const turn = (has("q") ? 1 : 0) - (has("e") ? 1 : 0);
-  if (turn) {
-    const off = camera.position.clone().sub(orbit.target).applyAxisAngle(new THREE.Vector3(0, 1, 0), turn * 1.6 * dt);
-    camera.position.copy(orbit.target).add(off);
-  }
-}
 
 window.addEventListener("keydown", (e) => {
   if (e.target.matches && e.target.matches("input, select, textarea")) return;
   const k = e.key.toLowerCase();
-  if (e.key === "Shift") held.add("shift");
-  if (MOVE_KEYS.has(k) && !e.ctrlKey && !e.altKey && !e.metaKey) { held.add(k); e.preventDefault(); return; }
+  if (e.key === "Shift") shiftHeld = true;
+  if (!e.ctrlKey && !e.altKey && !e.metaKey && map && fly.keyDown(k)) { e.preventDefault(); return; }
   if (k === "[" || k === "]") { const r = $("radius"); r.value = Number(r.value) + (k === "]" ? 2 : -2); r.dispatchEvent(new Event("input")); return; }
   if (k === "t" && !e.ctrlKey) { setMainMode(mode === "terrain" ? "objects" : "terrain"); return; }
   if (e.ctrlKey && k === "s") { e.preventDefault(); save(); }
@@ -870,12 +839,13 @@ function waitModels(timeoutMs = 60000) {
 }
 function frames(n = 2) { return new Promise((r) => { const step = () => (--n <= 0 ? r() : requestAnimationFrame(step)); requestAnimationFrame(step); }); }
 
+// Look at map point (x, y) from `distance` m away; yaw 0 = looking north, pitch 90 = straight down.
 function setCamera({ x, y, distance = 80, yaw = 0, pitch = 50 }) {
-  const tx = x ?? orbit.target.x, tz = y ?? orbit.target.z, ty = heights.at(tx, tz);
-  const p = rad(pitch), a = rad(yaw);
-  orbit.target.set(tx, ty, tz);
+  const fp = fly.focusPoint();
+  const tx = x ?? fp.x, tz = y ?? fp.z, ty = heights.at(tx, tz);
+  const p = rad(Math.min(pitch, 89.5)), a = rad(yaw);
   camera.position.set(tx - Math.sin(a) * Math.cos(p) * distance, ty + Math.sin(p) * distance, tz + Math.cos(a) * Math.cos(p) * distance);
-  orbit.update();
+  fly.lookAt(new THREE.Vector3(tx, ty, tz));
 }
 
 /* ---------- phase 3: top-down rendering, export, map check ---------- */
@@ -1116,7 +1086,12 @@ const API = {
   async save() { requireMap(); await save(); return { message: $("st-msg").textContent, unsaved: { objects: dirty, terrain: heights.isDirty } }; },
   undo() { undo(); return { undo: undoStack.length, redo: redoStack.length }; },
   redo() { redo(); return { undo: undoStack.length, redo: redoStack.length }; },
-  camera(params) { requireMap(); setCamera(params || {}); return { target: orbit.target.toArray().map((v) => +v.toFixed(2)) }; },
+  camera(params = {}) {
+    requireMap();
+    if (Object.keys(params).length) setCamera(params);
+    const f = fly.focusPoint();
+    return { position: camera.position.toArray().map((v) => +v.toFixed(2)), lookingAt: [+f.x.toFixed(2), +f.z.toFixed(2)], yaw: +deg(fly.yaw).toFixed(1), pitch: +deg(fly.pitch).toFixed(1) };
+  },
   async screenshot({ x, y, distance, yaw, pitch, attr } = {}) {
     requireMap();
     if (x !== undefined || distance !== undefined) setCamera({ x, y, distance, yaw, pitch });
@@ -1168,5 +1143,8 @@ window.__studio = {
   }
 };
 updateUi();
-orbit.mouseButtons = { LEFT: -1, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
-renderer.setAnimationLoop(() => { moveCamera(); orbit.update(); environment.follow(camera); renderer.render(scene, camera); });
+renderer.setAnimationLoop(() => {
+  fly.update(Math.min(0.1, moveClock.getDelta()), shiftHeld);
+  environment.follow(camera);
+  renderer.render(scene, camera);
+});

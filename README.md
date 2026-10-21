@@ -91,6 +91,14 @@ Nástroje: `mapstudio_launch`, `_status`, `_open_map`, `_list_objects`, `_search
 `_list_environments`, `_set_environment`, `_list_prefabs`, `_save_prefab`, `_place_prefab`. Pozície sú v metroch od severozápadného rohu mapy
 (x na východ, y na juh, z výška).
 
+### Ovládanie kamery (noclip)
+
+Kamera lieta voľne a terén neovplyvňuje jej pohyb: **W/S** let tam, kam sa pozeráš, **A/D** do strán,
+**E / medzerník** hore, **Q / C** dole, **Shift** 3,5× rýchlejšie. **Pravé tlačidlo** = rozhliadanie
+na mieste, **stredné** = posun, **koliesko** = let dopredu/dozadu. Rýchlosť sa riadi výškou nad terénom
+(pri zemi pomaly a presne). Ľavé tlačidlo je len na prácu: výber, obdĺžnik, úchyty, štetce.
+Úchyty posun/rotácia: **1 / 2**.
+
 ## Súradnice
 
 Scéna je v metroch, os Y hore: `scéna = (x/100, z/100, −y/100)` z Metin2 cm (y v AreaData je záporné).
