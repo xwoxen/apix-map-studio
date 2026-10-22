@@ -17,7 +17,15 @@ const ROTATION_MARKER = ".rotation-v2";
 const ROTATION_NOTE = "AreaData rotation in client order (tilt#tilt#vertical turn), see maplib.js" + CRLF;
 function isLegacyStudioMap(dir) {
   if (fs.existsSync(path.join(dir, ROTATION_MARKER))) return false;
-  return fs.existsSync(path.join(dir, "_studio_backup")) || fs.existsSync(path.join(dir, ".mapgen"));
+  if (!fs.existsSync(path.join(dir, "_studio_backup")) && !fs.existsSync(path.join(dir, ".mapgen"))) return false;
+  // An older Studio wrote its turn into the first number and 0 into the third. A third number that is not 0 means the
+  // file is in the client order (an official map, or files put back from the game) - never read it the old way.
+  for (const t of fs.readdirSync(dir)) {
+    if (!/^\d{6}$/.test(t)) continue;
+    const f = fs.readdirSync(path.join(dir, t)).find((n) => n.toLowerCase() === "areadata.txt");
+    if (f && /#-?[\d.]+#-?(?!0+(\.0+)?\s)[\d.]+\s/.test(fs.readFileSync(path.join(dir, t, f), "latin1"))) return false;
+  }
+  return true;
 }
 
 function parseAreaData(text, key, legacy = false) {

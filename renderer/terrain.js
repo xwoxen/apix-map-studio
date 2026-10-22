@@ -162,7 +162,9 @@ export class TerrainModel {
   }
 
   addTexture(game, url) {
-    const existing = this.textures.find((t) => t.file.toLowerCase() === game.toLowerCase());
+    // the same texture may be written with \\ or / and in any case (official sets use d:\\ymir work\\...)
+    const norm = (f) => f.toLowerCase().replace(/\\/g, "/").replace(/\/+/g, "/");
+    const existing = this.textures.find((t) => norm(t.file) === norm(game));
     if (existing) return existing;
     const index = this.textures.reduce((m, t) => Math.max(m, t.index), 0) + 1;
     const entry = { index, file: game, uScale: 4, vScale: 4, url };

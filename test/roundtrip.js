@@ -41,6 +41,11 @@ End Object
   const d = fs.mkdtempSync(path.join(os.tmpdir(), "mapstudio-rot-"));
   fs.mkdirSync(path.join(d, "_studio_backup"));
   assert.ok(isLegacyStudioMap(d), "older Studio save is legacy");
+  fs.mkdirSync(path.join(d, "002002"));
+  fs.writeFileSync(path.join(d, "002002", "areadata.txt"), one("345.000000#0.000000#30.000000"));
+  assert.ok(!isLegacyStudioMap(d), "a non-zero third number means client order even with a Studio backup");
+  fs.writeFileSync(path.join(d, "002002", "areadata.txt"), one("45.000000#0.000000#0.000000"));
+  assert.ok(isLegacyStudioMap(d), "only first numbers: older Studio map");
   fs.writeFileSync(path.join(d, ROTATION_MARKER), "");
   assert.ok(!isLegacyStudioMap(d), "marker ends legacy");
   fs.rmSync(d, { recursive: true, force: true });
