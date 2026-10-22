@@ -8,7 +8,14 @@ const inplace = process.argv.includes("--inplace");
 const copy = inplace ? mapDir : path.join(os.tmpdir(), "mapstudio-eval-" + path.basename(mapDir));
 if (!inplace) {
   fs.rmSync(copy, { recursive: true, force: true });
-  fs.cpSync(mapDir, copy, { recursive: true, filter: (p) => !/_studio_backup|[\\/]_export([\\/]|$)/.test(p) });
+  fs.cpSync(mapDir, copy, { recursive: true, filter: (p) => !/_studio_backup|_studio_snapshots|[\\/]_export([\\/]|$)/.test(p) });
+  // the texture set lives next to the map folder (TextureSet textureset/<name>.txt): bring it along, or the copy has no textures
+  const setting = fs.readdirSync(copy).find((f) => f.toLowerCase() === "setting.txt");
+  const rel = setting && (fs.readFileSync(path.join(copy, setting), "latin1").match(/TextureSet\s+(\S+)/) || [])[1];
+  if (rel) {
+    const src = path.join(path.dirname(mapDir), ...rel.replace(/\\/g, "/").split("/")), dst = path.join(path.dirname(copy), ...rel.replace(/\\/g, "/").split("/"));
+    if (fs.existsSync(src)) { fs.mkdirSync(path.dirname(dst), { recursive: true }); fs.copyFileSync(src, dst); }
+  }
 }
 const app = path.join(__dirname, "..");
 const out = execFileSync("cmd.exe", ["/c", path.join(app, "node_modules", ".bin", "electron.cmd"), ".", "--open", copy, "--eval", path.resolve(script), "--screenshot", path.join(os.tmpdir(), "mapstudio-eval-window.png")],

@@ -7,6 +7,7 @@ import { applySpline } from "./spline.js";
 import { reachable, patches } from "./reach.js";
 import { planSpawns } from "./spawnplan.js";
 import { forestEdge } from "./forestedge.js";
+import * as designer from "./designer.js";
 import { generateTerrain } from "./terraingen.js";
 import { autoTexture } from "./autotexture.js";
 import { scatter } from "./scatter.js";
@@ -1476,6 +1477,30 @@ function renderLiveList() {
   if ($("live-map").options.length) $("live-map").selectedIndex = 0;
 }
 $("btn-live").addEventListener("click", openLiveDialog);
+async function openSnapshots() {
+  if (!map) return;
+  const list = await window.studio.snapshotList(map.dir);
+  const rows = list.slice().reverse().map((s) => `<tr><td>${escapeHtml(s.id)}</td><td>${s.objects}</td>
+    <td><button type="button" data-diff="${escapeHtml(s.id)}">Rozdiel</button> <button type="button" data-restore="${escapeHtml(s.id)}">Obnoviť</button></td></tr>`).join("");
+  showReport("Snímky mapy", `<p class="sub">Snímka uloží uložený stav mapy (terén, objekty, spawny, sadu textúr). Obnovenie najprv odloží aktuálny stav ako ďalšiu snímku.</p>
+    <p><input id="snap-label" placeholder="názov (nepovinné)"> <button type="button" class="primary" id="snap-save">Uložiť snímku</button></p>
+    ${list.length ? `<table class="snaps"><tr><th>Snímka</th><th>Objekty</th><th></th></tr>${rows}</table>` : "<p>Zatiaľ žiadne snímky.</p>"}<div id="snap-out"></div>`);
+  $("snap-save").addEventListener("click", async () => {
+    try { const s = await API.snapshot_save({ label: $("snap-label").value.trim() }); setMsg(`Snímka ${s.id} uložená.`); openSnapshots(); }
+    catch (err) { setMsg(String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""), true); }
+  });
+  for (const b of document.querySelectorAll("[data-diff]")) b.addEventListener("click", async () => {
+    const d = await API.snapshot_diff({ id: b.dataset.diff });
+    $("snap-out").innerHTML = d.changed.length ? `<p>Rozdiel oproti ${escapeHtml(d.id)}:</p><ul>${d.changed.map((c) => `<li>${escapeHtml(c.file)} – ${c.change}</li>`).join("")}</ul>
+      ${Object.entries(d.objects).map(([t, o]) => `<p>${t}: zmenených/zmazaných ${o.removedOrChanged}, pridaných ${o.added}</p>`).join("")}` : "<p>Žiadny rozdiel.</p>";
+  });
+  for (const b of document.querySelectorAll("[data-restore]")) b.addEventListener("click", async () => {
+    if (!window.confirm(`Obnoviť mapu zo snímky ${b.dataset.restore}? Aktuálny uložený stav sa najprv uloží ako snímka.`)) return;
+    try { const r = await API.snapshot_restore({ id: b.dataset.restore }); $("report").close(); setMsg(`Obnovené z ${r.restored} (predchádzajúci stav: ${r.safety}).`); }
+    catch (err) { setMsg(String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""), true); }
+  });
+}
+$("btn-snapshots").addEventListener("click", openSnapshots);
 $("live-close").addEventListener("click", () => $("live-dlg").close());
 $("live-filter").addEventListener("input", renderLiveList);
 $("live-form").addEventListener("submit", async (e) => {
@@ -1898,6 +1923,71 @@ const API = {
   export: () => exportMaps(),
   suggest_game_slot() { requireMap(); return window.studio.gameSuggest(map.dir, map.size); },
   game_export({ index, base, goto: gotoAlias = null, objectCollision = true }) { return runGameExport({ index, base, gotoAlias, objectCollision }); },
+  // place objects at the nearest good spot to where they are wanted (see renderer/designer.js findSpot): walkable, flat,
+  // clear of other objects (their real footprint), optionally off the paths / on given textures; one undo step
+  async place_near({ items, offPath = false, maxSlope = 16, maxRough = 1.2, clearance = 0.5, radius = 4, avoid = [], avoidLines = [], dryRun = false }) {
+    requireMap();
+    const radiusOf = (crc) => { const s = (libByCrc.get(crc) || {}).size; const tree = (libByCrc.get(crc) || {}).type === "Tree"; return s ? (tree ? Math.min(2, Math.max(0.6, s[0] * 0.18)) : Math.max(0.4, Math.max(s[0], s[1]) / 2)) : 0.5; };
+    const taken = objects.map((o) => { const p = toScene(o); return { x: p.x, y: p.z, r: radiusOf(o.crc) }; });
+    const texIndex = (list) => list && list.map((t) => (typeof t === "number" ? t : (heights.textures.find((e) => e.file.toLowerCase().replace(/\\/g, "/") === String(t).toLowerCase().replace(/\\/g, "/")) || {}).index)).filter((v) => v !== undefined);
+    const paths = designer.pathTextureIndices(heights.textures);
+    const placed = [], missed = [], add = [];
+    for (const it of items) {
+      const crc = findCrc(it), footprint = it.footprint ?? radiusOf(crc);
+      const spot = designer.findSpot(heights, taken, { near: it.near || [it.x, it.y], radius: it.radius ?? radius, footprint, clearance: it.clearance ?? clearance,
+        maxSlope: it.maxSlope ?? maxSlope, maxRough: it.maxRough ?? maxRough, offPath: it.offPath ?? offPath, pathTextures: paths,
+        onTextures: texIndex(it.onTextures), avoidTextures: texIndex(it.avoidTextures), avoid: [...avoid, ...(it.avoid || [])], avoidLines, onBlocked: it.onBlocked });
+      if (!spot) { missed.push({ name: it.name || crc, near: it.near || [it.x, it.y] }); continue; }
+      const o = { crc, x: spot.x, y: spot.y, ground: it.ground || "min", sink: it.sink, lift: it.lift, yaw: it.yaw, face: it.face };
+      add.push(o); placed.push({ name: it.name || crc, x: spot.x, y: spot.y, moved: spot.moved });
+    }
+    if (!dryRun && add.length) await API.add_objects({ items: add });
+    return { placed, missed, dryRun };
+  },
+  // several camera views rendered into one labelled PNG (the bridge saves it and returns the file)
+  async shot_sheet({ cams, cols = 2, scale = 0.5, title = "" }) {
+    requireMap();
+    const shots = [];
+    for (const c of cams) shots.push({ label: c.label || "", png: (await API.screenshot(c)).png });
+    const imgs = await Promise.all(shots.map((s) => new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.src = s.png; })));
+    const w = Math.round(imgs[0].width * scale), h = Math.round(imgs[0].height * scale), head = title ? 40 : 0, cap = 28, rows = Math.ceil(imgs.length / cols);
+    const cv = document.createElement("canvas"); cv.width = w * Math.min(cols, imgs.length); cv.height = head + rows * (h + cap);
+    const g = cv.getContext("2d"); g.fillStyle = "#18181c"; g.fillRect(0, 0, cv.width, cv.height);
+    g.fillStyle = "#fff"; g.font = "bold 20px sans-serif"; if (title) g.fillText(title, 10, 27);
+    imgs.forEach((im, i) => { const x = (i % cols) * w, y = head + Math.floor(i / cols) * (h + cap); g.drawImage(im, x, y + cap, w, h); g.fillStyle = "#e8e8e8"; g.font = "16px sans-serif"; g.fillText(shots[i].label, x + 8, y + 19); });
+    return { png: cv.toDataURL("image/png"), width: cv.width, height: cv.height, shots: shots.length };
+  },
+  async snapshot_save({ label = "" } = {}) {
+    requireMap();
+    if (dirty || envDirty || spawnsDirty || heights.isDirty) throw new Error("Snímka berie uložený stav – najprv ulož mapu");
+    return window.studio.snapshotSave(map.dir, label);
+  },
+  snapshot_list() { requireMap(); return window.studio.snapshotList(map.dir); },
+  snapshot_diff({ id }) { requireMap(); return window.studio.snapshotDiff(map.dir, id); },
+  async snapshot_restore({ id }) {
+    requireMap();
+    if (dirty || envDirty || spawnsDirty || heights.isDirty) throw new Error("Mapa má neuložené zmeny – ulož ich (alebo zahoď) pred obnovou");
+    const r = await window.studio.snapshotRestore(map.dir, id);
+    await openMap(map.dir);
+    return r;
+  },
+  async palette({ theme } = {}) {
+    const all = await window.studio.palettes();
+    if (!theme) return Object.fromEntries(Object.entries(all).filter(([k]) => k !== "_").map(([k, v]) => [k, v.label]));
+    if (!all[theme]) throw new Error(`téma ${theme} neexistuje; sú: ${Object.keys(all).filter((k) => k !== "_").join(", ")}`);
+    return all[theme];
+  },
+  // minimap.dds of chosen terrains only (default for a live copy: terrains whose height / textures / water changed)
+  async export_minimaps({ terrains } = {}) {
+    requireMap();
+    if (!terrains && map.live) terrains = [...new Set((await window.studio.liveDiff(map.dir)).changes.filter((c) => ["height.raw", "tile.raw", "water.wtr"].includes(c.file)).map((c) => c.terrain))];
+    if (!terrains || !terrains.length) return { minimaps: 0 };
+    await waitModels();
+    const files = [];
+    for (const c of heights.chunks.values()) if (terrains.includes(c.key)) files.push({ rel: `${c.key}/minimap.dds`, kind: "dds", width: 256, height: 256, rgba: renderTopDown(c.tx * 256, c.ty * 256, 256, 256, 256, 256) });
+    const r = await window.studio.exportWrite(map.dir, files);
+    return { minimaps: files.length, terrains, backup: r.backup };
+  },
   list_live_maps: () => window.studio.liveList(),
   async open_live_map({ name }) {
     if (dirty || envDirty || spawnsDirty || (heights && heights.isDirty)) throw new Error("Otvorená mapa má neuložené zmeny – ulož ich alebo zahoď");
@@ -1941,6 +2031,8 @@ window.__studio = {
     return fn(params || {});
   },
   setMainMode, setTool, save, undo, redo, startPlacing, groundAt: (x, z) => heights.at(x, z),
+  // helpers for build scripts (geometry, slope, nearest good spot) - see renderer/designer.js
+  kit: designer,
   brush, get model() { return heights; }, get objects() { return objects; }, scene,
   get gizmo() { return gizmo; }, get pivot() { return pivot; }, select, layer,
   // what a click at client (x, y) would hit: object ids (with the mesh name) in hit order

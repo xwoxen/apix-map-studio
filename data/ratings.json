@@ -1,39 +1,171 @@
 {
   "_": "Hand verdicts merged into the asset catalog (tools/build-catalog.js). Key = property CRC or name; rating ok | avoid | rim-only; reason in Slovak. Verified in Map Studio screenshots 2026-10-22.",
-  "3517523760": { "rating": "avoid", "reason": "dl2_city Bench: v Map Studiu neviditeľná" },
-  "3440469183": { "rating": "avoid", "reason": "dl2_city Table: neviditeľný" },
-  "3951864287": { "rating": "avoid", "reason": "dl2_city Marketbox: plochý / zlá mierka" },
-  "1189499418": { "rating": "avoid", "reason": "dl2_city Sack: zlá mierka" },
-  "1901739268": { "rating": "avoid", "reason": "dl2_city Apfelsack: zlá mierka" },
-  "1827529423": { "rating": "avoid", "reason": "Trunk: obrovský kmeň" },
-  "1134939033": { "rating": "avoid", "reason": "prayer_banner01: obrie laná cez cestu" },
-  "4028113266": { "rating": "avoid", "reason": "prayer_banner02: obrie laná cez cestu" },
-  "293836555": { "rating": "avoid", "reason": "Ruin_Temple_Gate: rozbité textúry (diery)" },
-  "1631712370": { "rating": "avoid", "reason": "Ruin_Temple_Wall: rozbité textúry (diery)" },
-  "1438485573": { "rating": "avoid", "reason": "Ruins (dl2_dschungel): rozbité textúry" },
-  "3750174891": { "rating": "avoid", "reason": "Rock1 (dl2_rocks): neviditeľný" },
-  "1572238281": { "rating": "avoid", "reason": "rock_pillar_00: bez textúry (béžový)" },
-  "2340478676": { "rating": "avoid", "reason": "general_obj_watchtower01: obrovská" },
-  "4236863579": { "rating": "rim-only", "reason": "bigstonegate01: 30 m+ skalná stena, len na okraj mapy" },
-  "3993839827": { "rating": "rim-only", "reason": "bigstonegate02: 30 m+ skalná stena, len na okraj mapy" },
-  "2593673452": { "rating": "avoid", "reason": "tree_normal02a_1: zasnežený strom" },
-  "1337000031": { "rating": "avoid", "reason": "treecamoranparadise01: 40-80 m" },
-  "1337000033": { "rating": "avoid", "reason": "treecamoranparadise04: 40-80 m" },
-  "1777045049": { "rating": "avoid", "reason": "treecamoranparadise05: 40-80 m" },
-  "1826477408": { "rating": "ok", "reason": "Ruins (dl2_deco): oblúková ruina, dominanta" },
-  "3746404192": { "rating": "ok", "reason": "main_altar_001: oltár, dominanta" },
-  "2302259171": { "rating": "ok", "reason": "ob-12-03gate01: kupolová krypta" },
-  "1889935823": { "rating": "ok", "reason": "milgyo_pavilion: čajovňa / pavilón" },
-  "3348788882": { "rating": "ok", "reason": "Pavillion (dl2_blaues)" },
-  "318844410": { "rating": "ok", "reason": "Pavillion (dl2_ice): altánok" },
-  "1234504715": { "rating": "ok", "reason": "Well (dl2_rotes): studňa" },
-  "2387125182": { "rating": "ok", "reason": "Stall (dl2_village): trhový krám" },
-  "78": { "rating": "ok", "reason": "treewillowoakforestsu" },
-  "79": { "rating": "ok", "reason": "treewillowoakfreesu" },
-  "80": { "rating": "ok", "reason": "treewillowoakyoungsu" },
-  "fem_qq_0004_s_0004_bamboo_small": { "rating": "avoid", "reason": "Fem bambus: vyzerá zle" },
-  "fem_qq_0004_s_0004_bamboo_leave_b": { "rating": "avoid", "reason": "Fem bambus: vyzerá zle" },
-  "fem_qq_0004_s_0004_bamboo_leave_c": { "rating": "avoid", "reason": "Fem bambus: vyzerá zle" },
-  "fem_qq_0004_s_0004_bamboo_d": { "rating": "avoid", "reason": "Fem bambus: vyzerá zle" },
-  "fem_qq_0203_s_0203_table_01": { "rating": "avoid", "reason": "obrovský banketový stôl" }
+  "3517523760": {
+    "rating": "avoid",
+    "reason": "dl2_city Bench: v Map Studiu neviditeľná"
+  },
+  "3440469183": {
+    "rating": "avoid",
+    "reason": "dl2_city Table: neviditeľný"
+  },
+  "3951864287": {
+    "rating": "avoid",
+    "reason": "dl2_city Marketbox: plochý / zlá mierka"
+  },
+  "1189499418": {
+    "rating": "avoid",
+    "reason": "dl2_city Sack: zlá mierka"
+  },
+  "1901739268": {
+    "rating": "avoid",
+    "reason": "dl2_city Apfelsack: zlá mierka"
+  },
+  "1827529423": {
+    "rating": "avoid",
+    "reason": "Trunk: obrovský kmeň"
+  },
+  "1134939033": {
+    "rating": "avoid",
+    "reason": "prayer_banner01: obrie laná cez cestu"
+  },
+  "4028113266": {
+    "rating": "avoid",
+    "reason": "prayer_banner02: obrie laná cez cestu"
+  },
+  "293836555": {
+    "rating": "avoid",
+    "reason": "Ruin_Temple_Gate: rozbité textúry (diery)"
+  },
+  "1631712370": {
+    "rating": "avoid",
+    "reason": "Ruin_Temple_Wall: rozbité textúry (diery)"
+  },
+  "1438485573": {
+    "rating": "avoid",
+    "reason": "Ruins (dl2_dschungel): rozbité textúry"
+  },
+  "3750174891": {
+    "rating": "avoid",
+    "reason": "Rock1 (dl2_rocks): neviditeľný"
+  },
+  "1572238281": {
+    "rating": "avoid",
+    "reason": "rock_pillar_00: bez textúry (béžový)"
+  },
+  "2340478676": {
+    "rating": "avoid",
+    "reason": "general_obj_watchtower01: obrovská"
+  },
+  "4236863579": {
+    "rating": "rim-only",
+    "reason": "bigstonegate01: 30 m+ skalná stena, len na okraj mapy"
+  },
+  "3993839827": {
+    "rating": "rim-only",
+    "reason": "bigstonegate02: 30 m+ skalná stena, len na okraj mapy"
+  },
+  "2593673452": {
+    "rating": "avoid",
+    "reason": "tree_normal02a_1: zasnežený strom"
+  },
+  "1337000031": {
+    "rating": "avoid",
+    "reason": "treecamoranparadise01: 40-80 m"
+  },
+  "1337000033": {
+    "rating": "avoid",
+    "reason": "treecamoranparadise04: 40-80 m"
+  },
+  "1777045049": {
+    "rating": "avoid",
+    "reason": "treecamoranparadise05: 40-80 m"
+  },
+  "1826477408": {
+    "rating": "ok",
+    "reason": "Ruins (dl2_deco): oblúková ruina, dominanta"
+  },
+  "3746404192": {
+    "rating": "ok",
+    "reason": "main_altar_001: oltár, dominanta"
+  },
+  "2302259171": {
+    "rating": "ok",
+    "reason": "ob-12-03gate01: kupolová krypta"
+  },
+  "1889935823": {
+    "rating": "ok",
+    "reason": "milgyo_pavilion: čajovňa / pavilón"
+  },
+  "3348788882": {
+    "rating": "ok",
+    "reason": "Pavillion (dl2_blaues)"
+  },
+  "318844410": {
+    "rating": "ok",
+    "reason": "Pavillion (dl2_ice): altánok"
+  },
+  "1234504715": {
+    "rating": "ok",
+    "reason": "Well (dl2_rotes): studňa"
+  },
+  "2387125182": {
+    "rating": "ok",
+    "reason": "Stall (dl2_village): trhový krám"
+  },
+  "78": {
+    "rating": "ok",
+    "reason": "treewillowoakforestsu"
+  },
+  "79": {
+    "rating": "ok",
+    "reason": "treewillowoakfreesu"
+  },
+  "80": {
+    "rating": "ok",
+    "reason": "treewillowoakyoungsu"
+  },
+  "fem_qq_0004_s_0004_bamboo_small": {
+    "rating": "avoid",
+    "reason": "Fem bambus: vyzerá zle"
+  },
+  "fem_qq_0004_s_0004_bamboo_leave_b": {
+    "rating": "avoid",
+    "reason": "Fem bambus: vyzerá zle"
+  },
+  "fem_qq_0004_s_0004_bamboo_leave_c": {
+    "rating": "avoid",
+    "reason": "Fem bambus: vyzerá zle"
+  },
+  "fem_qq_0004_s_0004_bamboo_d": {
+    "rating": "avoid",
+    "reason": "Fem bambus: vyzerá zle"
+  },
+  "fem_qq_0203_s_0203_table_01": {
+    "rating": "avoid",
+    "reason": "obrovský banketový stôl"
+  },
+  "treewhitepinesnow": {
+    "rating": "avoid",
+    "reason": "v Studiu zelený, do snehu nepatrí (asset-sheet 2026-10-22)"
+  },
+  "snowpinebig3": {
+    "rating": "avoid",
+    "reason": "hnedý, nepôsobí ako zasnežený"
+  },
+  "beechsnow2": {
+    "rating": "avoid",
+    "reason": "38 m kmeň, mierka nesedí"
+  },
+  "bone00c": {
+    "rating": "avoid",
+    "reason": "drobná kosť vyzerá ako drevená kocka"
+  },
+  "bone00d": {
+    "rating": "avoid",
+    "reason": "drobná kosť vyzerá ako drevená kocka"
+  },
+  "bone00e": {
+    "rating": "avoid",
+    "reason": "drobná kosť vyzerá ako drevená kocka"
+  }
 }

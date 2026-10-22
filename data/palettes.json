@@ -1,0 +1,77 @@
+{
+  "_": "Theme palettes for building maps: textures by role, trees, buildings, props, lights and effects verified on asset sheets / maps (tools/asset-sheet.js), and what to avoid with the reason. Used by the API palette() and MCP mapstudio_palette. Extend when a new theme or asset is verified.",
+  "snow": {
+    "label": "Zasnežený priesmyk / horská dedina",
+    "source": "map_n_snowm_01, metin2_map_empirewar01; apix_farm_02 (Priesmyk Bieleho vlka)",
+    "environment": "N-snowm01.msenv",
+    "textures": {
+      "base": "d:/ymir work/terrainmaps/n/snow.m/snow01.dds", "base_alt": "d:/ymir work/terrainmaps/n/snow.m/snow02.dds", "slope": "d:/ymir work/terrainmaps/n/snow.m/snow03.dds",
+      "path": "d:/ymir work/terrainmaps/n/snow.m/field 01.dds", "rock": "d:/ymir work/terrainmaps/n/snow.m/stone01.dds", "rock_soft": "d:/ymir work/terrainmaps/n/snow.m/stone03.dds",
+      "ice": "d:/ymir work/terrainmaps/n/snow.m/ice_quest.dds", "pave": "d:/ymir work/terrainmaps/n/snow.m/tile04.dds"
+    },
+    "trees": { "conifer": ["WhitePine1", "WhitePine2", "ColoradoBlueSpruce1", "ColoradoBlueSpruce2", "ColoradoBlueSpruce3", "MontereyCypress_Winter1", "MontereyCypress_Winter2"],
+      "broadleaf": ["Beech_Winter1", "Beech_Winter2", "Beech_Winter3", "CommonOlive_Winter", "Tulip_Winter1"], "shrubs": ["winter_shrub00a", "winter_shrub00b", "winter_shrub01a", "winter_shrub01b"] },
+    "buildings": { "hall": ["snow-009-hotel", "snow_4fbuilding", "snow-033-guesthouse-01", "snow-033-guesthouse-02"], "house": ["nsm-016-house9", "nsm-001-house3", "nsm-004-house2", "snow-032-shamanhouse"],
+      "wall": ["snow-bigdam-01", "snow-bigdam-02", "snow-bigdam-04", "snow-bigdam-05"], "gate": ["snow-035-woodgate", "snow-middledam-01"], "tower": ["nsm-037-tower", "snow_tower01"],
+      "tent": ["general_obj_tent01", "general_obj_tent02", "nsm-general_obj_03", "nsm-general_obj_06", "nsm-general_obj_07"], "bridge": ["nsm-022-10m-bridge", "nsm-10m-bridge02"], "cave": ["n_snow_m_resoucegate.GR2"] },
+    "props": ["ob-7-02-01", "general_obj_flag", "general_obj_fence01", "general_obj_fence02", "wolf_statue", "ice_pillar_s05", "ice_pillar_s01", "SpearRock_004", "deadwood_01", "deadwood_05", "deadwood_07", "deadwood_08", "stone_grave_001"],
+    "rocks": ["general_obj_stone10", "general_obj_stone13", "general_obj_stone07", "general_obj_stone14"],
+    "lights": ["nsm-018-stonelight", "nsm-018-stonelight-1", "snow_brazier"],
+    "effects": { "fire": "fire_camp1 (na snow_brazier +3.9 m; veľký plameň – nie pri stanoch)", "blue_fire": "fire_blue1", "mist": "fall_smoke, ground_smoke" },
+    "density": "map_n_snowm_01: ~7 stromov/ha hrateľnej plochy, Clark-Evans 0.6, 5 textúr na terén",
+    "avoid": { "treewhitepinesnow": "v Studiu zelený (letný)", "snowpinebig3": "hnedý", "beechsnow2": "38 m kmeň", "bone00c": "vyzerá ako drevená kocka", "bone00d": "vyzerá ako drevená kocka", "bone00e": "vyzerá ako drevená kocka",
+      "moss_rock_01_big": "machová skala do snehu nepatrí", "trigonal_rock_01": "pieskovec do snehu nepatrí", "d:/ymir work/terrainmaps/n/snow.m/field 02.dds": "hnedá", "d:/ymir work/terrainmaps/n/snow.m/field 03.dds": "hnedá" }
+  },
+  "village_spring": {
+    "label": "Jarná / letná dedina (štýl Yonganu)",
+    "source": "metin2_map_a1 (Yongan), metin2_map_a3, metin2_map_b3",
+    "environment": "A1.msenv",
+    "textures": {
+      "base": "d:/ymir work/terrainmaps/b/grass/grass 01.dds", "base_alt": "d:/ymir work/terrainmaps/b/grass/grass 02.dds", "meadow": "d:/ymir work/terrainmaps/b/grass/grass 03.dds",
+      "path": "d:/ymir work/terrainmaps/b/field/field 01.dds", "path_alt": "d:/ymir work/terrainmaps/b/field/field 04.dds", "rock": "d:/ymir work/terrainmaps/b/stone/stone01.dds",
+      "pave": "d:/ymir work/terrainmaps/b/tile/tile02.dds", "sand": "d:/ymir work/terrainmaps/b/beach/beach sand 01.dds"
+    },
+    "trees": { "broadleaf": ["Beech1", "Beech3", "Beech4", "RedOak1", "Sassafras_Fall1", "Sassafras_Fall2", "JapaneseMaple_Fall1"], "conifer": ["Pagoda1", "Pagoda2", "Pagoda3", "CedarOfLebanon1", "MontereyCypress3", "MontereyCypress4"],
+      "shrubs": ["plant_bush", "plant_bush2", "grass01"] },
+    "buildings": { "house": ["a1-016-house9", "a1-033-guesthouse-01", "a1-033-guesthouse-02", "a1-011-workhouse"], "shop": ["a1-007-itemshop"], "well": ["fortMS_build_well"], "gate": ["a1-035-woodgate"],
+      "wall": ["a1-038-wall-lin2", "a1-038-wall-corner"], "bridge": ["b1-022-10m-bridge", "a1-024-10m-bridge"], "tent": ["general_obj_tent02", "thing_market tent_01"] },
+    "props": ["ob-b1-005-woodbarrel", "ob-b1-006-woodbarrel", "ob-b1-001-box01", "ob-b1-001-box02", "ob-b1-001-box03", "general_obj_woodbed", "general_obj_woodchair", "cart_shop", "cart_shopbox01",
+      "general_obj_jar_red01", "general_obj_drum", "obj-0003", "general_obj_fence01", "general_obj_fence02", "general_obj_fence03", "general_obj_fence04", "sign_01", "general_obj_flag", "B_general_obj_25",
+      "Flowers_pink", "Flowers_yellow", "Flowers_white", "flowerrosa1", "general_obj_campfire"],
+    "rocks": ["general_obj_stone03", "general_obj_stone07", "general_obj_stone10", "general_obj_stone14"],
+    "lights": ["a1_018-stonelight", "a1_018-stonelight-1", "general_obj_lamp", "obj-0010", "tent_01_lamp"],
+    "effects": { "fire": "fire_camp1 (na general_obj_campfire +0.4 m)" },
+    "density": "a1 / a3 / b3: 7-10 objektov a 5-9 stromov na ha hrateľnej plochy, Clark-Evans 0.45-0.6; Yongan má 17 textúr v sade, max 12 na terén",
+    "avoid": { "general_obj_suspension bridge01": "hra ho nezobrazí (katalóg)", "general_obj_suspension bridge02": "hra ho nezobrazí (katalóg)", "torch_2": "6 m veľká fakľa, pôsobí ako hranica" }
+  },
+  "autumn_farm": {
+    "label": "Jesenné farmovacie údolie",
+    "source": "apix_farm_01b, metin2_map_a3",
+    "environment": "guild_village.msenv",
+    "textures": { "base": "d:/ymir work/terrainmaps/a/grass/grass 01.dds", "base_alt": "d:/ymir work/terrainmaps/a/grass/grass 02.dds", "path": "d:/ymir work/terrainmaps/a/field/field 02.dds",
+      "path_edge": "d:/ymir work/terrainmaps/a/field/field 01.dds", "rock": "d:/ymir work/terrainmaps/a/stone/stone01.dds", "pave": "d:/ymir work/terrainmaps/12temple/stone_tile_001.dds",
+      "sand": "d:/ymir work/terrainmaps/a/beach/beach sand 01.dds", "river_bed": "d:/ymir work/terrainmaps/12temple/stone_02.dds" },
+    "trees": { "broadleaf": ["Beech1", "Beech3", "Beech4", "RedOak1", "Sassafras_Fall1", "JapaneseMaple_Fall1"], "conifer": ["Pagoda1", "Pagoda2", "Pagoda3", "CedarOfLebanon1", "MontereyCypress3", "MontereyCypress4", "treescotchpineforest4", "treescotchpineforest5", "treedeodar"],
+      "shrubs": ["plant_bush", "plant_bush2", "grass01"] },
+    "buildings": { "camp": ["camp_redthief_build_00", "camp_redthief_build_01", "camp_redthief_build_03"], "shrine": ["Shrine_06", "Shrine_09", "Shrine_10", "Shrine_rock_01", "Shrine_rock_04", "Shrine_rock_06"],
+      "ruin": ["ob-bigstatue01", "ob-bigstatue02", "ob-bigstatue03", "stone_grave_001", "general_obj_lionstoneimage", "general_obj_stonepillar_01"], "crypt": ["main_altar_001", "ob-12-03gate01"] },
+    "props": ["general_obj_campfire", "general_obj_flag", "general_obj_woodbox", "ob-b1-005-woodbarrel"],
+    "rocks": ["general_obj_stone10", "general_obj_stone13", "general_obj_stone07", "general_obj_stone14"],
+    "lights": ["a1_018-stonelight", "general_obj_lamp", "ob-11-02-stonelight01"],
+    "density": "cieľ ~6-8 stromov/ha hrateľnej plochy v hájoch (Clark-Evans 0.5-0.7), les na blokovaných kopcoch",
+    "avoid": { "Well": "Granny v7 – hra nezobrazí", "Stall": "Granny v7", "Pavillion": "Granny v7", "Ruins": "Granny v7" }
+  },
+  "ice_dungeon": {
+    "label": "Ľadová jaskyňa / dungeon",
+    "source": "metin2_map_n_snow_dungeon_01, apix_dungeon_01",
+    "environment": "metin2_map_n_snow_dungeon_01.msenv",
+    "textures": { "floor": "d:/ymir work/terrainmaps/n/snow.m/snow01.dds", "floor_alt": "d:/ymir work/terrainmaps/n/snow.m/snow02.dds", "cracked": "d:/ymir work/terrainmaps/n/snow.m/stone03.dds",
+      "wall": "d:/ymir work/terrainmaps/n/snow.m/stone01.dds", "ice": "d:/ymir work/terrainmaps/n/snow.m/ice_quest.dds", "pave": "d:/ymir work/terrainmaps/n/snow.m/tile04.dds", "dirt": "d:/ymir work/terrainmaps/n/snow.m/field 03.dds" },
+    "structures": { "pillar": ["column01b", "column00b", "column00e", "column01d", "dmw_dungeon_pillar_02"], "portal": ["warpgate01", "warpgate02_01", "warpgate03_01"], "throne": ["boss_gate_001"],
+      "obelisk": ["general_obj_bigtower05"], "guard": ["general_obj_lionstoneimage", "wolf_statue"], "ice": ["ice_pillar_s05", "ice_pillar_s01", "icicle_up_01", "icicle_up_05"], "ceiling": ["apix_cave_ceiling_66", "apix_cave_ceiling_84"] },
+    "props": ["bone00g", "bone00f", "bone_whale_rib_up01", "bone00a", "deadwood_05", "deadwood_07", "stone_grave_001", "SpearRock_004"],
+    "lights": ["snow_brazier"],
+    "effects": { "fire": "fire_camp1", "blue_fire": "fire_blue1", "mist": "ground_smoke" },
+    "avoid": { "rock_pillar_00": "nepoužiteľný (huge, sunk-origin)", "snow_bossroom": "huge, sunk-origin – miestnosť sa nedá dobre umiestniť" }
+  }
+}

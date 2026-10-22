@@ -280,6 +280,20 @@ Z ručnej práce na mape Priesmyk Bieleho vlka (`_exports/apix_farm_02/tools/bui
   (pôvodný stav sa zapíše pri prvom otvorení nezmenenej kópie).
 - ZIP-y číta a píše `mapgen/zipfile.js` (stored + deflate ako libzip v klientovi; prázdne súbory klient preskakuje). Test `test/live.js`.
 
+### Pracovné prostredie na tvorbu máp (fáza 11)
+
+- **Kladenie na najbližšie dobré miesto** – `mapstudio_place_near` (`renderer/designer.js` `findSpot`): priechodné, rovné, voľné
+  (skutočný pôdorys z katalógu), voliteľne mimo ciest (`offPath`), na / mimo textúr, na blokovanej zemi (`onBlocked`), natočené k bodu.
+- **Snímky** – tlačidlo **Snímky** a `mapstudio_snapshot` (save / list / diff / restore): uložený stav mapy vrátane spawnov a sady
+  textúr v `<mapa>/_studio_snapshots`; obnova najprv odloží aktuálny stav.
+- **Hárok záberov** – `mapstudio_shot_sheet`: viac pohľadov s popiskami v jednom PNG.
+- **Palety tém** – `mapstudio_palette` (`data/palettes.json`): overené textúry podľa úlohy, stromy, budovy, rekvizity, svetlá,
+  efekty a čo nepoužívať (sneh, jarná dedina, jesenná farma, ľadový dungeon). Nové zlé assety v `data/ratings.json`.
+- **Minimapy vybraných terénov** – `mapstudio_export_minimaps` (pri kópii z hry len zmenené terény).
+- **Recepty** – `recipes/`: overené stavebné skripty (farmovacie údolie, mapa z výrezov, dungeon s arénami a questom, klenba jaskyne,
+  úpravy živej mapy) a postup s cieľovými číslami. Skripty majú k dispozícii `window.__studio.kit` (geometria, sklon, `findSpot`).
+- `test/run-eval.js` berie ku kópii mapy aj jej sadu textúr. Testy `test/designer.js`, `test/snapshots.js`.
+
 ## Ďalšie fázy
 
 2. ~~Štetce terénu (výška, textúry, voda, atribúty).~~ Hotové.

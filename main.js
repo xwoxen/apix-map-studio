@@ -578,6 +578,13 @@ ipcMain.handle("live:stage", (_, dir) => {
   const stamp = `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
   return liveMap.stageLiveUpdate(dir, path.join(APIX_ROOT, "_map_exports", `${liveMap.readMarker(dir).map}_update_${stamp}`));
 });
+// snapshots of a map's saved state (variants, safe experiments) and theme palettes for building maps
+const snapshots = require("./mapgen/snapshots");
+ipcMain.handle("snapshot:save", (_, dir, label) => snapshots.saveSnapshot(dir, label));
+ipcMain.handle("snapshot:list", (_, dir) => snapshots.listSnapshots(dir));
+ipcMain.handle("snapshot:diff", (_, dir, id) => snapshots.diffSnapshot(dir, id));
+ipcMain.handle("snapshot:restore", (_, dir, id) => snapshots.restoreSnapshot(dir, id));
+ipcMain.handle("palette:get", () => JSON.parse(fs.readFileSync(path.join(__dirname, "data", "palettes.json"), "utf8")));
 ipcMain.handle("live:baseline", (_, dir, baseline) => {
   const f = path.join(dir, liveMap.MARKER), m = JSON.parse(fs.readFileSync(f, "utf8"));
   m.baseline = baseline;
@@ -628,6 +635,13 @@ function createBlankMap({ name, sizeX = 1, sizeY = 1, baseTexture = "d:/ymir wor
 
 async function bridgeCall(method, params) {
   if (method === "new_map") return callRenderer("open_map", { dir: createBlankMap(params) });
+  if (method === "shot_sheet") {
+    const r = await callRenderer("shot_sheet", params);
+    fs.mkdirSync(SHOTS, { recursive: true });
+    const file = path.join(SHOTS, `sheet-${Date.now()}.png`);
+    fs.writeFileSync(file, Buffer.from(r.png.replace(/^data:image\/png;base64,/, ""), "base64"));
+    return { file, width: r.width, height: r.height, shots: r.shots };
+  }
   if (method === "screenshot") {
     const r = await callRenderer("screenshot", params);                     // renderer prepares the view and returns a PNG
     fs.mkdirSync(SHOTS, { recursive: true });

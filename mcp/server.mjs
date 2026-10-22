@@ -356,6 +356,44 @@ server.registerTool("mapstudio_window_screenshot", {
   inputSchema: {}
 }, tool(() => call("window_screenshot")));
 
+server.registerTool("mapstudio_place_near", {
+  title: "Položiť objekty na najbližšie dobré miesto",
+  description: `Každý objekt sa položí na najbližšie vhodné miesto k near [x,y] do radius m (4): priechodné, sklon ≤ maxSlope (16°), nerovnosť pod pôdorysom ≤ maxRough (1,2 m),
+odstup clearance m (0,5) od iných objektov (ich skutočný pôdorys z katalógu), offPath = nie na textúrach ciest (field/road/path/dirt/tile), onTextures / avoidTextures (cesta textúry alebo index),
+avoid [{x,y,r}], onBlocked = na blokovanej zemi (les, skaly). face [x,y] otočí front k bodu, ground min = päta na najnižšom bode. Vráti placed (s posunom moved) a missed. dryRun = len plán. ${POS}`,
+  inputSchema: { items: z.array(z.object({ crc: z.number().optional(), name: z.string().optional(), near: point, radius: z.number().optional(), footprint: z.number().optional(),
+    clearance: z.number().optional(), maxSlope: z.number().optional(), maxRough: z.number().optional(), offPath: z.boolean().optional(), onBlocked: z.boolean().optional(),
+    onTextures: z.array(z.union([z.number(), z.string()])).optional(), avoidTextures: z.array(z.union([z.number(), z.string()])).optional(),
+    avoid: z.array(z.object({ x: z.number(), y: z.number(), r: z.number() })).optional(), face: point.optional(), yaw: z.number().optional(), sink: z.number().optional(), lift: z.number().optional() })).min(1).max(500),
+    offPath: z.boolean().optional(), maxSlope: z.number().optional(), maxRough: z.number().optional(), clearance: z.number().optional(), radius: z.number().optional(),
+    avoid: z.array(z.object({ x: z.number(), y: z.number(), r: z.number() })).optional(), dryRun: z.boolean().optional() }
+}, tool((a) => call("place_near", a)));
+
+server.registerTool("mapstudio_shot_sheet", {
+  title: "Hárok záberov",
+  description: `Viac pohľadov kamery do jedného PNG s popiskami (vráti cestu k súboru). cams [{ label, x, y, distance, yaw, pitch }], cols (2), scale (0,5), title. yaw 0 = pohľad na sever. ${POS}`,
+  inputSchema: { cams: z.array(z.object({ label: z.string().optional(), x: z.number(), y: z.number(), distance: z.number().optional(), yaw: z.number().optional(), pitch: z.number().optional(), attr: z.boolean().optional() })).min(1).max(16),
+    cols: z.number().int().optional(), scale: z.number().optional(), title: z.string().optional() }
+}, tool((a) => call("shot_sheet", a)));
+
+server.registerTool("mapstudio_snapshot", {
+  title: "Snímky stavu mapy",
+  description: "Snímky uloženého stavu otvorenej mapy (terén, objekty, spawny, sada textúr) v <mapa>/_studio_snapshots: action save (label), list, diff (id: čo sa zmenilo odvtedy), restore (id; aktuálny stav sa najprv uloží ako snímka, mapa sa znova otvorí). Save a restore vyžadujú uloženú mapu.",
+  inputSchema: { action: z.enum(["save", "list", "diff", "restore"]), label: z.string().optional(), id: z.string().optional() }
+}, tool((a) => call("snapshot_" + a.action, a)));
+
+server.registerTool("mapstudio_palette", {
+  title: "Paleta témy",
+  description: "Overené textúry (podľa úlohy: base, path, rock, pave …), stromy, budovy, rekvizity, svetlá, efekty, prostredie a hustoty pre tému mapy, aj čo nepoužívať a prečo. Bez theme vráti zoznam tém (snow, village_spring, autumn_farm, ice_dungeon). Zdroj data/palettes.json.",
+  inputSchema: { theme: z.string().optional() }
+}, tool((a) => call("palette", a)));
+
+server.registerTool("mapstudio_export_minimaps", {
+  title: "Minimapy vybraných terénov",
+  description: "Prekreslí minimap.dds len pre zadané terény (kľúče ako 001002). Pri kópii mapy z hry bez terrains vezme terény so zmenenou výškou, textúrami alebo vodou. Pozor: štýl minimapy z Map Studia sa môže líšiť od pôvodných minimáp hry.",
+  inputSchema: { terrains: z.array(z.string().regex(/^\d{6}$/)).optional() }
+}, tool((a) => call("export_minimaps", a)));
+
 server.registerTool("mapstudio_list_live_maps", {
   title: "Mapy v hre",
   description: "Mapy z packu klienta, ktoré sa dajú upraviť cez pracovnú kópiu (meno, pack, veľkosť, či kópia <mapa>_live existuje). Yongan = metin2_map_a1, Joan = metin2_map_b1, Pyungmoo = metin2_map_c1.",
