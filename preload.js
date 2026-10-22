@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld("studio", {
   setEnvironment: (dir, name) => ipcRenderer.invoke("env:set", dir, name),
   library: () => ipcRenderer.invoke("library:list"),
   catalog: (query) => ipcRenderer.invoke("catalog:query", query),
+  sources: () => ipcRenderer.invoke("sources:list"),
+  region: (dir, area) => ipcRenderer.invoke("region:read", dir, area),
   model: (crc) => ipcRenderer.invoke("model:get", crc),
   character: (cls) => ipcRenderer.invoke("character:get", cls),
   collisionGrid: (objects, size) => ipcRenderer.invoke("collision:grid", objects, size),

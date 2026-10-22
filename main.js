@@ -526,6 +526,14 @@ function modelAvailable(p) {
 }
 // Asset catalog (catalog.js, built by tools/build-catalog.js): size and warnings on library rows, queries for the API.
 ipcMain.handle("catalog:query", (_, q) => queryCatalog(q));
+// source maps for region import (mapread.js): list, and a region of one as plain arrays
+const { readRegion, listSourceMaps } = require("./mapread");
+ipcMain.handle("sources:list", () => listSourceMaps());
+ipcMain.handle("region:read", (_, dir, area) => {
+  const list = listSourceMaps(), hit = list.find((m) => m.dir === dir) || list.find((m) => m.name === dir);
+  if (!hit) throw new Error(`Mapa ${dir} sa nenašla (mapstudio_list_sources)`);
+  return readRegion(hit.dir, area);
+});
 ipcMain.handle("library:list", () => {
   const c = getCatalog();
   return [...getLibrary().values()].filter(modelAvailable).map(({ crc, name, type, folder, model }) => ({ crc, name, type, folder, model, ...(c ? catalogBrief(c.items[crc >>> 0]) : {}) }));

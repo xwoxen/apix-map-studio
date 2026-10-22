@@ -111,7 +111,7 @@ hills { amplitude m (8), scale m veľkosť tvarov (140), octaves (5), ridged 0�
 rim { box [x0,y0,x1,y1] hrateľná plocha, width m (60), height m (30), ridged (0.6), scale (90) } = hory mimo boxu,
 calm [{ points, radius, factor 0–1 }] = menej reliéfu pri cestách / údoliach, flats [{ x, y, r, blend (12), height? }] = rovné plochy po erózii,
 erosion { droplets (30000), strength (1), thermal (20), talus ° (35) }, seed. ${POS}`,
-  inputSchema: { area: box.optional(), blend: z.number().optional(), base: z.number().optional(), seed: z.number().optional(),
+  inputSchema: { area: box.optional(), blend: z.number().optional(), base: z.number().optional(), seed: z.number().optional(), mode: z.enum(["replace", "add"]).optional().describe("add = pridá reliéf / hory k existujúcemu terénu"),
     hills: z.object({ amplitude: z.number(), scale: z.number(), octaves: z.number().int(), ridged: z.number(), warp: z.number() }).partial().optional(),
     rim: z.object({ box, width: z.number().optional(), height: z.number().optional(), ridged: z.number().optional(), scale: z.number().optional() }).optional(),
     calm: z.array(z.object({ points: z.array(point).min(2), radius: z.number(), factor: z.number() })).optional(),
@@ -145,6 +145,23 @@ Všetko: area [x0,y0,x1,y1], avoid [{x,y,r}] (rezervované plochy), avoidLines [
       spacing: z.number().optional(), clearance: z.number().optional(), slope: z.tuple([z.number(), z.number()]).optional(), height: z.tuple([z.number(), z.number()]).optional(),
       onTextures: z.array(texRef).optional(), avoidTextures: z.array(texRef).optional(), sink: z.number().optional(), maxGroundRange: z.number().optional(), yaw: z.number().optional() })).min(1) }
 }, tool((a) => call("scatter", a)));
+
+server.registerTool("mapstudio_list_sources", {
+  title: "Zdrojové mapy",
+  description: "Mapy z klientských packov a z WorldEditora, z ktorých sa dá importovať oblasť (názov, priečinok, veľkosť v terénoch po 256 m). Atlas na výber oblasti: python tools/map_atlas.py <priečinok> <out.png> 64 0.6 --attr.",
+  inputSchema: { query: z.string().optional() }
+}, tool((a) => call("list_sources", a)));
+
+server.registerTool("mapstudio_import_region", {
+  title: "Importovať oblasť z inej mapy",
+  description: `Skopíruje obdĺžnik inej mapy (terén, textúry, atribúty block/voda, voda, objekty s výškou nad terénom) do otvorenej mapy. source = názov alebo priečinok mapy,
+area [x0,y0,x1,y1] m v zdrojovej mape, to [x,y] ľavý horný roh v cieľovej, rotate 0–3 (× 90° v smere hodín), blend m (16, mäkký okraj s prechodom textúr),
+heightOffset "match" (podľa okraja cieľa) alebo číslo m, parts { heights, textures, attributes, water, objects }, skipUnusable (true = vynechá objekty, ktoré hra nezobrazí).
+Vráti počet objektov, preskočené, textúry na terén (max 12). Terén = jeden krok Späť, objekty druhý. ${POS}`,
+  inputSchema: { source: z.string(), area: box, to: point, rotate: z.number().int().min(0).max(3).optional(), blend: z.number().optional(),
+    heightOffset: z.union([z.literal("match"), z.number()]).optional(), skipUnusable: z.boolean().optional(), seed: z.number().optional(),
+    parts: z.object({ heights: z.boolean(), textures: z.boolean(), attributes: z.boolean(), water: z.boolean(), objects: z.boolean() }).partial().optional() }
+}, tool((a) => call("import_region", a)));
 
 server.registerTool("mapstudio_catalog", {
   title: "Katalóg assetov",

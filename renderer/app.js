@@ -7,6 +7,7 @@ import { applySpline } from "./spline.js";
 import { generateTerrain } from "./terraingen.js";
 import { autoTexture } from "./autotexture.js";
 import { scatter } from "./scatter.js";
+import { importRegion } from "./importregion.js";
 import { ObjectLayer, template, toScene, fromScene, AMBIENCE_DEFAULT } from "./objects.js";
 import { thumbnail } from "./thumbs.js";
 import { Environment } from "./env.js";
@@ -1660,6 +1661,46 @@ const API = {
       }
     });
     return { stats: res.stats, count: added.length, ids: added.map((o) => o.id) };
+  },
+  list_sources: async ({ query = "" } = {}) => (await window.studio.sources()).filter((m) => (m.name + " " + m.dir).toLowerCase().includes(query.toLowerCase())),
+  // copy a rectangle of another map into this one (one undo step); objects not usable in game are skipped by default
+  async import_region({ source, area, to, rotate = 0, blend = 16, heightOffset = "match", parts, skipUnusable = true, seed } = {}) {
+    requireMap();
+    if (!source || !area || !to) throw new Error("source, area [x0,y0,x1,y1] (m v zdrojovej mape) a to [x,y] sú povinné");
+    const region = await window.studio.region(source, area);
+    // textures: source index -> destination index (added to the map's texture set by game path)
+    const textureMap = {};
+    const used = new Set(region.tiles);
+    for (const t of region.textures) if (used.has(t.index)) textureMap[t.index] = (await API.add_texture({ game: t.file })).index;
+    heights.beginStroke();
+    const r = importRegion(heights, region, { to, rotate, blend, heightOffset, parts, seed, textureMap, attrFlags: { block: attrMask({ block: true }), water: attrMask({ water: true }) } });
+    const skipped = {};
+    const keep = r.objects.filter((o) => {
+      const p = libByCrc.get(o.crc);
+      const bad = !p || (skipUnusable && p.usable === false && !p.usableAfterPacking);
+      if (bad) { const n = p ? p.name : `crc ${o.crc}`; skipped[n] = (skipped[n] || 0) + 1; }
+      return !bad;
+    });
+    view.refresh(r.keys, r.parts);
+    const snap = heights.endStroke();
+    if (snap) pushHistory(snap, "terrain");
+    const added = [];
+    if (keep.length) change(() => {
+      for (const o of keep) {
+        const ob = { id: nextId++, crc: o.crc, ...fromScene(new THREE.Vector3(o.x, heights.at(o.x, o.y) + o.lift, o.y)), yaw: o.yaw, pitch: 0, roll: 0, bias: 0 };
+        objects.push(ob); added.push(ob);
+      }
+    });
+    // texture budget: the client draws at most 12 textures per 256 m terrain
+    const perTerrain = {};
+    for (let ty = 0; ty < map.size[1]; ty++) for (let tx = 0; tx < map.size[0]; tx++) {
+      const s = new Set();
+      for (let y = ty * 256; y < ty * 256 + 256; y += 1) for (let x = tx * 256; x < tx * 256 + 256; x += 1) s.add(heights.tile(x, y));
+      perTerrain[`${String(tx).padStart(3, "0")}${String(ty).padStart(3, "0")}`] = s.size;
+    }
+    updateUi();
+    return { source: region.source, area: region.area, placedAt: r.area, heightOffset: r.offset, objects: added.length, ids: added.map((o) => o.id), skipped,
+      texturesPerTerrain: perTerrain, warnings: Object.entries(perTerrain).filter(([, n]) => n > 12).map(([k, n]) => `terén ${k}: ${n} textúr (max 12)`) };
   },
   catalog: (query) => window.studio.catalog(query || {}),
   list_prefabs: () => window.studio.prefabs(),

@@ -214,6 +214,21 @@ dekódovať (`mapgen/lzo.js`) a sedí bunka po bunke s `attr.atr` – overuje `n
 - Ukážka: `_exports/apix_farm_01b/tools/build.js` postaví celú farmovaciu mapu za ~5 s; čísla porovnané s oficiálnymi mapami
   (`tools/analyze-maps.js`).
 
+### Predlohy z oficiálnych máp (fáza 8)
+
+- **Zdroje** – `mapstudio_list_sources` (`mapread.js`): oficiálne mapy z packu klienta a mapy WorldEditora; `loadMap` / `readRegion`
+  čítajú výšky, textúry, atribúty, vodu a objekty bez Electronu.
+- **Import oblasti** – `mapstudio_import_region` (`renderer/importregion.js`): skopíruje obdĺžnik inej mapy (terén, textúry,
+  atribúty, vodu, objekty) na zvolené miesto, otočený po 90° v smere hodín, výškovo napojený na okraj (`heightOffset: "match"`)
+  a rozmazaný do okolia nepravidelným okrajom. Objekty nepoužiteľné v hre (katalóg) vynechá, upozorní na > 12 textúr na terén.
+  Test: `node test/run-eval.js <prázdna 2×1 mapa> test/import-demo.js <out> --inplace` (140/140 objektov na správnom mieste a s
+  otočením).
+- **Terén navrch** – `terrain_generate` s `mode: "add"` pridá reliéf alebo hory k existujúcemu terénu (bez erózie).
+- **Atlas** – `python tools/map_atlas.py <mapa> <out.png> [--attr]`: minimapa s metrovou mriežkou a blokovanými bunkami, na
+  výber oblastí.
+- **Prefaby z máp** – `node tools/mine-prefabs.js a1=<dir> …`: nájde skupiny (budova s rekvizitami, skaly, háje) a uloží ich ako
+  prefaby `src_<mapa>_<typ>_NN`.
+
 ## Ďalšie fázy
 
 2. ~~Štetce terénu (výška, textúry, voda, atribúty).~~ Hotové.

@@ -35,4 +35,14 @@ const assert = require("assert");
   for (const i of res.items) assert(Math.hypot(i.x - 128, i.y - 128) >= 20, "reserved area violated");
   assert(res.items.filter((i) => i.layer === "rock").every((i) => i.z < model.at(i.x, i.y)), "rocks should be sunk");
   console.log("ok: scatter", JSON.stringify(Object.fromEntries(Object.entries(res.stats).map(([k, v]) => [k, v.placed]))));
+  const { rotator } = await import("../renderer/importregion.js");
+  for (let k = 0; k < 4; k++) {
+    const r = rotator(k, 200, 120);
+    for (const [u, v] of [[0, 0], [37, 91], [200, 120]]) {
+      const [a, b] = r.fwd(u, v), [u2, v2] = r.inv(a, b);
+      assert(a >= 0 && b >= 0 && a <= r.W && b <= r.H && Math.abs(u2 - u) + Math.abs(v2 - v) < 1e-9, `rotator ${k} (${u}, ${v})`);
+    }
+  }
+  assert.deepStrictEqual(rotator(1, 200, 120).fwd(0, 0), [120, 0], "clockwise: north-west corner goes to north-east");
+  console.log("ok: region rotator");
 })().catch((e) => { console.error(e); process.exit(1); });

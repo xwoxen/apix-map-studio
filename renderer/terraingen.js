@@ -12,7 +12,7 @@ import { fbm, rng, smoothstep, polylineDistance } from "./noise.js";
  *  calm: [{ points [[x, y], ...], radius m, factor 0..1 }]   noise multiplied by factor near the polylines (roads, valleys)
  *  flats: [{ x, y, r, blend (12), height? }]                 level pads after erosion (towns, plazas)
  *  erosion: { droplets (30000), strength (1), thermal iterations (20), talus deg (35) }
- *  seed
+ *  seed, mode: "replace" (default) | "add" (relief and rim added on top of the current ground, no erosion unless asked)
  * returns { keys, parts, stats }
  */
 export function generateTerrain(model, opts = {}) {
@@ -46,9 +46,9 @@ export function generateTerrain(model, opts = {}) {
         h += t * rim.height * (0.65 + 0.35 * rimNoise(wx / rim.scale, wy / rim.scale)) + t * t * rim.height * 0.4;
       }
     }
-    H[j * nx + i] = h;
+    H[j * nx + i] = opts.mode === "add" ? old[j * nx + i] + (h - base) : h;       // add: relief / rim on top of the current ground
   }
-  const er = { droplets: 30000, strength: 1, thermal: 20, talus: 35, ...(opts.erosion || {}) };
+  const er = { droplets: opts.mode === "add" ? 0 : 30000, strength: 1, thermal: opts.mode === "add" ? 0 : 20, talus: 35, ...(opts.erosion || {}) };
   if (er.droplets > 0) hydraulic(H, nx, ny, er, seed);
   if (er.thermal > 0) thermal(H, nx, ny, er.thermal, Math.tan((er.talus * Math.PI) / 180) * 2);
   for (const fl of opts.flats || []) {
