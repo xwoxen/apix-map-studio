@@ -250,6 +250,9 @@ Z ručnej práce na mape Priesmyk Bieleho vlka (`_exports/apix_farm_02/tools/bui
 - **Kontrola mapy** – nové varovania: rozpočet objektov na terén (> 450), objekty nepoužiteľné v hre, spawny nedosiahnuteľné z Townu;
   efekty sa už nehlásia ako visiace.
 - Testy v `test/gen.js`, ukážka `test/phase9-demo.js`.
+- **Stropy jaskýň** – modely s `ceiling` v mene sa kreslia jednostranne ako v klientovi (líce dovnútra): zvnútra je strop vidno,
+  zhora zmizne a nezakryje mapu. Pozor na textúry v priečinku s bodkou v mene (`snow.m`): konverzia GR2 → FBX ich nenájde a model
+  zostane neviditeľný; textúru skopíruj k modelu.
 
 ## Ďalšie fázy
 

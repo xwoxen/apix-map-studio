@@ -182,7 +182,8 @@ export function template(crc) {
           if (m.isMesh) {
             const mats = Array.isArray(m.material) ? m.material : [m.material];
             for (const mat of mats) {
-              mat.side = THREE.DoubleSide;
+              // cave ceilings face inward and rely on back-face culling like the client: seen from inside, gone from above
+              mat.side = /ceiling/i.test(info.name || "") ? THREE.FrontSide : THREE.DoubleSide;
               mat.transparent = false; mat.opacity = 1;
               // Alpha-test only textures that really loaded; a missing texture would cut the whole model away.
               if (mat.map) {
