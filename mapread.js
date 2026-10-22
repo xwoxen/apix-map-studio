@@ -32,7 +32,7 @@ function loadMap(dir) {
     if (!sub) continue;
     const td = path.join(dir, sub);
     const ad = readCi(td, "areadata.txt");
-    if (ad) for (const o of parseAreaData(ad.toString("latin1"), k, isLegacyStudioMap(dir))) objects.push({ x: o.x / 100, y: -o.y / 100, z: o.z / 100, crc: o.crc >>> 0, yaw: o.yaw });
+    if (ad) for (const o of parseAreaData(ad.toString("latin1"), k, isLegacyStudioMap(dir))) objects.push({ x: o.x / 100, y: -o.y / 100, z: (o.z + (o.bias || 0)) / 100, crc: o.crc >>> 0, yaw: o.yaw });
     const hr = readCi(td, "height.raw");
     if (hr) for (let j = 0; j <= 128; j++) for (let i = 0; i <= 128; i++) {
       const gx = tx * 128 + i, gy = ty * 128 + j;

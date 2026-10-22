@@ -1385,7 +1385,7 @@ async function checkMap() {
   const floating = [], buried = [], wet = [];
   for (const o of objects) {
     if ((libByCrc.get(o.crc) || {}).type === "Effect") continue;              // fire over a brazier, mist in a gorge: placed in the air on purpose
-    const p = toScene(o), g = heights.at(p.x, p.z), d = p.y - g;
+    const p = toScene(o), g = heights.at(p.x, p.z), d = p.y + (o.bias || 0) / 100 - g;
     if (d > 1.5) floating.push(o.id);
     if (d < -1.5 && !trees.has(o.crc)) buried.push(o.id);
     const w = heights.waterLevel(Math.floor(p.x / 2), Math.floor(p.z / 2));

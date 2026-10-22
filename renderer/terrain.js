@@ -322,7 +322,7 @@ export class TerrainView {
     }
     for (const m of mesh.userData.masks) m.needsUpdate = true;
     u.tex.value = Array.from({ length: MAX_SLOTS }, (_, i) => this.texture(this.model.textures.find((t) => t.index === slots[i])));
-    u.scale.value = Array.from({ length: MAX_SLOTS }, (_, i) => { const t = this.model.textures.find((e) => e.index === slots[i]); return t ? Math.max(1, (t.uScale || 4) * 2) : 8; });
+    u.scale.value = Array.from({ length: MAX_SLOTS }, (_, i) => { const t = this.model.textures.find((e) => e.index === slots[i]); return t ? 32 / Math.max(0.25, t.uScale || 4) : 8; });   // client: one repeat per 32 / UScale m (MapOutdoorLoad m_fTerrainTexCoordBase)
   }
 
   updateAttr(key) {

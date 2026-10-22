@@ -21,13 +21,25 @@ function isLegacyStudioMap(dir) {
 }
 
 function parseAreaData(text, key, legacy = false) {
+  // Tokens per object as the client reads them (GameLib/Area.cpp __Load_LoadObject): x y z crc [rotation] [bias] [extra...].
+  // A rotation without '#' is the vertical turn alone; extra tokens (e.g. portal numbers in dungeon maps) are ignored by
+  // the client but kept here so a save does not drop or change anything.
   const objects = [];
-  const re = /Start Object\d+\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\S+)#(\S+)#(\S+)\s+(\S+)\s+End Object/g;
+  const re = /Start Object\d+\s([\s\S]*?)End Object/g;
   let m;
   while ((m = re.exec(text))) {
-    const [a, b, c] = [+m[5], +m[6], +m[7]];
-    const rot = legacy ? { yaw: a + c, pitch: b, roll: 0 } : { yaw: c, pitch: b, roll: a };
-    objects.push({ x: +m[1], y: +m[2], z: +m[3], crc: Number(m[4]) >>> 0, ...rot, bias: +m[8], terrain: key });
+    const t = m[1].trim().split(/\s+/);
+    if (t.length < 4) continue;
+    let rot = { yaw: 0, pitch: 0, roll: 0 };
+    if (t.length > 4) {
+      if (t[4].includes("#")) {
+        const [a, b, c] = t[4].split("#").map(Number);
+        rot = legacy ? { yaw: a + c, pitch: b, roll: 0 } : { yaw: c, pitch: b, roll: a };
+      } else rot = { yaw: Number(t[4]), pitch: 0, roll: 0 };
+    }
+    const o = { x: +t[0], y: +t[1], z: +t[2], crc: Number(t[3]) >>> 0, ...rot, bias: t.length > 5 ? +t[5] : 0, terrain: key };
+    if (t.length > 6) o.extra = t.slice(6);
+    objects.push(o);
   }
   return objects;
 }
@@ -57,7 +69,8 @@ function formatAmbienceData(list) {
   return lines.join(CRLF) + CRLF;
 }
 
-// client order: tilt#tilt#vertical turn, whole degrees in 0..359 (the client truncates with atoi)
+// client order: tilt#tilt#vertical turn, whole degrees in 0..359 (the client truncates with atoi). Keep the decimals:
+// the client reads the FIRST number as substr(0, s - 1), one character short, so "30#0#45" would load as 3 degrees.
 function rotation(o) {
   const deg = (v) => fixed((((Math.round(Number(v) || 0)) % 360) + 360) % 360);
   return `${deg(o.roll)}#${deg(o.pitch)}#${deg(o.yaw)}`;
@@ -67,7 +80,7 @@ function formatAreaData(list) {
   const lines = ["AreaDataFile", ""];
   list.forEach((o, i) => {
     lines.push(`Start Object${String(i).padStart(3, "0")}`, `    ${fixed(o.x)} ${fixed(o.y)} ${fixed(o.z)}`, `    ${o.crc >>> 0}`,
-      `    ${rotation(o)}`, `    ${fixed(o.bias || 0)}`, "End Object");
+      `    ${rotation(o)}`, `    ${fixed(o.bias || 0)}`, ...(o.extra || []).map((e) => `    ${e}`), "End Object");
   });
   lines.push("", `ObjectCount ${list.length}`);          // WorldEditor ignores objects without this trailer
   return lines.join(CRLF) + CRLF;

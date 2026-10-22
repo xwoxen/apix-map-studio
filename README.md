@@ -146,6 +146,14 @@ celé stupne cez `atoi`): **otočenie okolo zvislej osi je tretie číslo**, prv
 vykresľuje ako klient a ukladá v poradí klienta. Mapy uložené Studiom pred 2026-10-23 (`_studio_backup` alebo `.mapgen` bez `.rotation-v2`)
 mali yaw v prvom čísle; Studio ich číta po starom, pri uložení prepíše na nové poradie a export do hry ich vždy prevedie.
 
+Zhoda s klientom (audit 2026-10-23, `node test/conformance.js` nad všetkými oficiálnymi mapami, je v `npm test`):
+- `AreaData` sa číta po tokenoch ako v klientovi: poloha, CRC, rotácia (aj jedno číslo = zvislé otočenie), výškový posun, ďalšie polia
+  (napr. číslo portálu v dungeonoch) sa zachovajú. Prvé číslo rotácie musí mať desatinnú časť – klient ho číta o znak kratšie.
+- Výškový posun (bias) sa pripočíta k výške pri vykreslení, kontrole, importe aj kolíziách (klient: `Position.z + m_fHeightBias`).
+- Stromy (SpeedTree) sa nekreslia otočené – klient im rotáciu nedáva.
+- Textúra terénu sa opakuje každých `32 / uScale` m (klient: `1 / (16 × 200 cm) × UScale`).
+- Konverzia GR2 → FBX orezáva cestu k textúre pri prvej bodke; chýbajúcu textúru Studio dohľadá v GR2 (`tools/gr2info`).
+
 Scéna je v metroch, os Y hore: `scéna = (x/100, z/100, −y/100)` z Metin2 cm (y v AreaData je záporné).
 Terén: bunka × 2 m, výška = surová hodnota / 200. Formáty súborov: `mapgen/README.md`.
 

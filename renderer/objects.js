@@ -231,7 +231,9 @@ export class ObjectLayer {
 
   place(node, o) {
     node.position.copy(toScene(o));
-    if (o.pitch || o.roll) node.quaternion.copy(clientRotation(o));
+    node.position.y += (o.bias || 0) / 100;           // the client draws at z + height bias (GameLib/Area.cpp)
+    if (node.userData.tree) node.rotation.set(0, 0, 0);   // SpeedTree instances get no rotation in the client
+    else if (o.pitch || o.roll) node.quaternion.copy(clientRotation(o));
     else node.rotation.set(0, THREE.MathUtils.degToRad(o.yaw || 0), 0);
     if (node.userData.ambience || o.ambience) this.placeRange(node, o.ambience || AMBIENCE_DEFAULT);
   }
@@ -263,6 +265,7 @@ export class ObjectLayer {
       const inst = cloneSkinned(tpl);
       inst.traverse((m) => { m.userData.id = o.id; });
       node.add(inst);
+      if (info.kind === "speedtree" || info.kind === "tree") { node.userData.tree = true; node.rotation.set(0, 0, 0); }
       if (info.kind === "ambience" && !node.userData.ambience) this.placeRange(node, o.ambience || AMBIENCE_DEFAULT);
     }).finally(() => { this.pending--; if (this.onLoaded) this.onLoaded(this.pending); });
     return node;

@@ -243,12 +243,34 @@ function toPng(src, dest) {
 }
 
 async function recoverTextures(fbx, modelFile, out) {
+  let real = null;
   for (const ref of textureRefs(fbx)) {
     const dest = path.join(out, path.basename(ref.replace(/\\/g, "/")).replace(/\.[a-z0-9]+$/i, ".png"));
     if (fs.existsSync(dest)) continue;
-    const src = findSourceTexture(ref, modelFile);
+    let src = findSourceTexture(ref, modelFile);
+    if (!src) {
+      // The FBX exporter cuts a texture path at its first '.' ("snow.m/stone03.dds" arrives as "snow.png"): match the
+      // cut-off path against the real texture paths stored in the GR2 (tools/gr2info).
+      real = real || gr2Textures(modelFile);
+      const cut = (t) => t.toLowerCase().replace(/\\/g, "/").replace(/_/g, " ");
+      const prefix = cut(ref).replace(/\.[a-z0-9]+$/, "") + ".";
+      const hit = real.find((t) => cut(t).startsWith(prefix));
+      if (hit) src = findSourceTexture(hit, modelFile);
+    }
     if (src) await toPng(src, dest);
   }
+}
+
+const GR2INFO = path.join(__dirname, "tools", "gr2info", "gr2info.exe");
+function gr2Textures(modelFile) {
+  try {
+    const list = path.join(app.getPath("temp"), `mapstudio-gr2tex-${process.pid}.txt`);
+    fs.writeFileSync(list, modelFile);
+    const out = require("child_process").execFileSync(GR2INFO, [list], { encoding: "utf8", timeout: 30000, windowsHide: true,
+      env: { ...process.env, PATH: `${path.join(APIX_ROOT, "apix-client", "dist")};${process.env.PATH}` } });
+    const line = out.split(/\r?\n/).find((l) => l.startsWith("{"));
+    return line ? JSON.parse(line).textures || [] : [];
+  } catch { return []; }
 }
 
 /* ---------- thumbnails ---------- */

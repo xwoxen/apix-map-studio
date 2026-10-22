@@ -14,7 +14,7 @@ const STEP = 0.2;          // m, sampling step over shape surfaces and areas
 // model space (cm, z up) -> map meters (x east, y south, h up) for an AreaData object
 function placer(o) {
   const yaw = (o.yaw || 0) * Math.PI / 180, c = Math.cos(yaw), s = Math.sin(yaw);
-  const ox = o.x / 100, oy = -o.y / 100, oh = o.z / 100;
+  const ox = o.x / 100, oy = -o.y / 100, oh = (o.z + (o.bias || 0)) / 100;   // client draws at z + height bias
   return ([x, y, z]) => {
     // three.js chain used by the renderer: (x, z, -y) * 0.01, then rotation about the up axis by yaw
     const sx = x / 100, sz = -y / 100;
