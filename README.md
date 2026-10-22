@@ -31,7 +31,9 @@ Prvé spustenie po inštalácii: `npm install` (Electron musí mať povolený in
   modelu v packu alebo podľa hernej cesty a prevedú cez texconv na PNG s názvom, ktorý čaká FBX.
 - Voľné pokladanie: objekt sadne na to, čo je pod kurzorom (terén alebo iný objekt, napr. strecha), pri
   pohľade do oblohy sa položí do vzduchu. **Alt + koliesko** alebo **PgUp / PgDn** ho zdvihne / zníži
-  (Shift po 2 m), **Home** ho vráti na povrch. Platí aj pre prefaby.
+  (Shift po 2 m, Ctrl po 10 cm), **Home** ho vráti na povrch. Platí aj pre prefaby a pre už vybrané objekty
+  (každé stlačenie = jeden krok Späť). Posun úchytmi do strán sleduje terén, ale objekt si drží svoju výšku nad ním
+  (zdvihnutý objekt sa už nevráti na zem); test `test/lift-demo.js`.
 - Pri pokladaní ukazuje žltý obrys stopy objektu na zemi, **Shift+R** otáča o 15° (R o 45°) a pri vybraných
   objektoch zarovná rotáciu na 15° mriežku. Knižnica má zoznam **Posledné** (naposledy položené objekty).
 - Výber kliknutím, posun (W) a rotácia (E) úchytmi, položenie na terén (G), duplikovanie (Ctrl+D),

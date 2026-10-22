@@ -249,7 +249,10 @@ gizmo.addEventListener("dragging-changed", (e) => {
   fly.enabled = !e.value;
   if (e.value) {
     dragBefore = snapshot();
-    dragStart = { pivot: pivot.position.clone(), rot: pivot.rotation.y, items: selectedObjects().map((o) => ({ o, p: toScene(o), yaw: o.yaw })) };
+    dragStart = { pivot: pivot.position.clone(), rot: pivot.rotation.y, items: selectedObjects().map((o) => {
+      const p = toScene(o);
+      return { o, p, yaw: o.yaw, lift: heights ? p.y - heights.at(p.x, p.z) : 0 };
+    }) };
   } else if (dragBefore) {
     pushHistory(dragBefore); dragBefore = null; dragStart = null;
     placePivot(); renderInspector();
@@ -260,10 +263,11 @@ gizmo.addEventListener("objectChange", () => {
   pivot.rotation.x = 0; pivot.rotation.z = 0;
   const d = pivot.position.clone().sub(dragStart.pivot), r = pivot.rotation.y - dragStart.rot;
   // Ground snap only for horizontal handles (X, Z, XZ plane); the centre handle and anything with Y move freely.
+  // It follows the terrain but keeps each object's height above it, so a lifted object is not dropped back down.
   const snapGround = $("snap").checked && gizmo.mode === "translate" && heights && !/Y|E/.test(gizmo.axis || "");
   for (const it of dragStart.items) {
     const np = it.p.clone().sub(dragStart.pivot).applyAxisAngle(UP, r).add(dragStart.pivot).add(d);
-    if (snapGround) np.y = heights.at(np.x, np.z);
+    if (snapGround) np.y = heights.at(np.x, np.z) + it.lift;
     Object.assign(it.o, fromScene(np));
     it.o.yaw = (((it.yaw + deg(r)) % 360) + 360) % 360;
     const node = layer.nodes.get(it.o.id);
@@ -604,10 +608,22 @@ function liftPlacing(dy) {
   placing.lift = dy === null ? 0 : Math.round((placing.lift + dy) * 10) / 10;
   showLift(); updateGhost();
 }
+// Selected objects lift the same way (Ctrl = 10 cm for fine detail); one undo step per key press / wheel notch.
+function liftSelected(dy) {
+  const sel = selectedObjects();
+  if (!sel.length || mode !== "objects") return false;
+  change(() => { for (const o of sel) o.z = Math.round(o.z + dy * 100); });
+  placePivot();
+  setMsg(sel.length > 1 ? `${sel.length} objektov ${dy > 0 ? "zdvihnutých" : "znížených"} o ${Math.abs(dy)} m.` : `Výška ${(sel[0].z / 100).toFixed(2)} m.`);
+  return true;
+}
+const liftStep = (e) => (e.ctrlKey ? 0.1 : e.shiftKey ? 2 : 0.5);
 renderer.domElement.addEventListener("wheel", (e) => {
-  if (!placing || !e.altKey) return;
+  if (!e.altKey) return;
+  const dy = (e.deltaY < 0 ? 1 : -1) * liftStep(e);
+  if (placing) liftPlacing(dy);
+  else if (!liftSelected(dy)) return;
   e.preventDefault(); e.stopImmediatePropagation();
-  liftPlacing((e.deltaY < 0 ? 1 : -1) * (e.shiftKey ? 2 : 0.5));
 }, { passive: false, capture: true });
 function stopPlacing() {
   if (!placing) return;
@@ -1113,8 +1129,10 @@ window.addEventListener("keydown", (e) => {
   else if (k === "z" && !e.ctrlKey) { zonesOn = !zonesOn; applyAttrView(); }
   else if (k === "r" && placing) { placing.yaw = (placing.yaw + (e.shiftKey ? 15 : 45)) % 360; updateGhost(); }
   else if (k === "r" && e.shiftKey && selection.size) snapRotation();
-  else if (placing && (k === "pageup" || k === "pagedown")) { e.preventDefault(); liftPlacing(k === "pageup" ? 0.5 : -0.5); }
+  else if (placing && (k === "pageup" || k === "pagedown")) { e.preventDefault(); liftPlacing((k === "pageup" ? 1 : -1) * liftStep(e)); }
   else if (placing && k === "home") liftPlacing(null);
+  else if (selection.size && (k === "pageup" || k === "pagedown")) { e.preventDefault(); liftSelected((k === "pageup" ? 1 : -1) * liftStep(e)); }
+  else if (selection.size && k === "home") groundSelected();
   else if (k === "escape") { if (placing) stopPlacing(); else if (mode === "spawns") selectSpawn(null); else select(null); }
 });
 function undo() { if (!undoStack.length) return; redoStack.push(restore(undoStack.pop())); updateUi(); }
