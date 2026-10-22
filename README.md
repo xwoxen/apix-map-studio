@@ -199,6 +199,21 @@ dekódovať (`mapgen/lzo.js`) a sedí bunka po bunke s `attr.atr` – overuje `n
 - Stromy, ktorých `.spt` uvádza textúru listov bez prípony (CompositeMapB1/B2, taoshuleaves, Bamboos…), sa už kreslia s textúrou
   (klient číta `<meno>.dds`); `.dds`, ktorý je v skutočnosti PNG (spruceleaves.dds), sa načíta podľa obsahu.
 
+### Generovanie (fáza 7)
+
+- **Terén** – MCP `mapstudio_terrain_generate` (`renderer/terraingen.js`): reliéf zo šumu (fBm, hrebene, warp), hory okolo
+  hrateľného boxu (`rim`), menej reliéfu pri cestách (`calm`), erózia vodou (kvapky) a zosuvmi (talus), rovné plochy (`flats`),
+  prechod do pôvodného terénu na okraji oblasti. Jeden krok Späť.
+- **Textúry** – `mapstudio_auto_texture` (`renderer/autotexture.js`): pravidlá podľa sklonu, výšky, vzdialenosti od vody a šumu,
+  prvé zhodné vyhrá, roztrhané okraje, `keep` nechá cesty / dlažbu.
+- **Biómy** – `mapstudio_scatter` (`renderer/scatter.js`): vrstvy so zhlukmi (háje), maskou (lesné škvrny s rednúcim okrajom),
+  podrastom pri stromoch inej vrstvy (`near`), presným počtom (`count`, dominanty), `blocked: "only"` (les na blokovaných kopcoch),
+  zapustením skál (`sink`); rozostupy podľa skutočných rozmerov z katalógu, mimo ciest, vody a rezervovaných plôch. `dryRun` vráti
+  dôvody odmietnutia.
+- Testovacia inštancia (`--open … --eval …`) sa spustí aj na mape bez objektov. Test: `node test/gen.js` (v `npm test`).
+- Ukážka: `_exports/apix_farm_01b/tools/build.js` postaví celú farmovaciu mapu za ~5 s; čísla porovnané s oficiálnymi mapami
+  (`tools/analyze-maps.js`).
+
 ## Ďalšie fázy
 
 2. ~~Štetce terénu (výška, textúry, voda, atribúty).~~ Hotové.

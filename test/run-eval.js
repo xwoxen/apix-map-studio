@@ -1,13 +1,17 @@
 // Copies a map to a scratch folder, runs a second Map Studio on the copy with an --eval script and saves the result:
 // <out>/result.json, and every data:image/png value under result.shots as <out>/<name>.png.
-// usage: node test/run-eval.js <map dir> <eval script> <out dir>
+// usage: node test/run-eval.js <map dir> <eval script> <out dir> [--inplace]
+//   --inplace opens the map itself (the script may save it) instead of a scratch copy
 const fs = require("fs"), path = require("path"), os = require("os"), { execFileSync } = require("child_process");
 const [mapDir, script, outDir] = process.argv.slice(2);
-const copy = path.join(os.tmpdir(), "mapstudio-eval-" + path.basename(mapDir));
-fs.rmSync(copy, { recursive: true, force: true });
-fs.cpSync(mapDir, copy, { recursive: true, filter: (p) => !/_studio_backup|[\\/]_export([\\/]|$)/.test(p) });
+const inplace = process.argv.includes("--inplace");
+const copy = inplace ? mapDir : path.join(os.tmpdir(), "mapstudio-eval-" + path.basename(mapDir));
+if (!inplace) {
+  fs.rmSync(copy, { recursive: true, force: true });
+  fs.cpSync(mapDir, copy, { recursive: true, filter: (p) => !/_studio_backup|[\\/]_export([\\/]|$)/.test(p) });
+}
 const app = path.join(__dirname, "..");
-const out = execFileSync("cmd.exe", ["/c", path.join(app, "node_modules", ".bin", "electron.cmd"), ".", "--open", copy, "--eval", path.resolve(script), "--screenshot", path.join(copy, "window.png")],
+const out = execFileSync("cmd.exe", ["/c", path.join(app, "node_modules", ".bin", "electron.cmd"), ".", "--open", copy, "--eval", path.resolve(script), "--screenshot", path.join(os.tmpdir(), "mapstudio-eval-window.png")],
   { cwd: app, encoding: "utf8", timeout: 900000, maxBuffer: 1 << 30 });
 const line = out.split(/\r?\n/).find((l) => l.startsWith("[eval]"));
 if (!line) { console.log(out.slice(-3000)); process.exit(1); }

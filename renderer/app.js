@@ -4,6 +4,9 @@ import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { TerrainModel, TerrainView } from "./terrain.js";
 import { TOOLS, paint, sample, attrMask, BrushCursor } from "./brush.js";
 import { applySpline } from "./spline.js";
+import { generateTerrain } from "./terraingen.js";
+import { autoTexture } from "./autotexture.js";
+import { scatter } from "./scatter.js";
 import { ObjectLayer, template, toScene, fromScene, AMBIENCE_DEFAULT } from "./objects.js";
 import { thumbnail } from "./thumbs.js";
 import { Environment } from "./env.js";
@@ -1203,7 +1206,8 @@ window.addEventListener("beforeunload", (e) => { if (dirty || spawnsDirty || (he
 /* ---------- start ---------- */
 
 let shotRequested = false;
-window.studio.onAutoOpen((dir) => { shotRequested = true; openMap(dir); });
+// a map without objects never reports loaded models, so test runs also start once the map is open
+window.studio.onAutoOpen(async (dir) => { shotRequested = true; await openMap(dir); if (!objects.length) setTimeout(() => window.studio.readyForShot(), 800); });
 window.studio.library().then((list) => {
   library = list.sort((a, b) => a.name.localeCompare(b.name));
   for (const p of library) libByCrc.set(p.crc, p);
@@ -1606,6 +1610,56 @@ const API = {
     if (snap) pushHistory(snap, "terrain");
     updateUi();
     return { changed: [...r.parts], length: r.length, profile: r.profile, waterLevels: r.waterLevels };
+  },
+  // terrain from noise + erosion inside an area (one undo step); see renderer/terraingen.js for the options
+  terrain_generate(opts = {}) {
+    requireMap();
+    heights.beginStroke();
+    const r = generateTerrain(heights, opts);
+    view.refresh(r.keys, r.parts);
+    const snap = heights.endStroke();
+    if (snap) pushHistory(snap, "terrain");
+    updateUi();
+    return r.stats;
+  },
+  // rule-based texturing by slope / height / water distance / noise (one undo step); textures as index or game path
+  async auto_texture({ rules, keep = [], area, seed } = {}) {
+    requireMap();
+    const tex = async (t) => (typeof t === "number" ? t : (await API.add_texture({ game: t })).index);
+    const rs = [];
+    for (const rule of rules || []) rs.push({ ...rule, texture: await tex(rule.texture) });
+    const kp = [];
+    for (const k of keep) kp.push(await tex(k));
+    heights.beginStroke();
+    const r = autoTexture(heights, { rules: rs, keep: kp, area, seed });
+    view.refresh(r.keys, r.parts);
+    const snap = heights.endStroke();
+    if (snap) pushHistory(snap, "terrain");
+    updateUi();
+    return { counts: r.counts, textures: heights.textures.map((t) => ({ index: t.index, file: t.file })) };
+  },
+  // biome scatter (one undo step); items by crc or name; sizes from the asset catalog; dryRun only reports
+  async scatter({ layers, area, seed, avoid, avoidLines, avoidWater, avoidBlocked, dryRun = false } = {}) {
+    requireMap();
+    const tex = async (list) => { if (!list) return list; const out = []; for (const t of list) out.push(typeof t === "number" ? t : (await API.add_texture({ game: t })).index); return out; };
+    const ls = [];
+    for (const L of layers || []) ls.push({ ...L, items: (L.items || []).map((it) => ({ crc: findCrc(it), weight: it.weight ?? 1 })), onTextures: await tex(L.onTextures), avoidTextures: await tex(L.avoidTextures) });
+    const existing = objects.map((o) => {
+      const p = toScene(o), info = libByCrc.get(o.crc) || {}, s = info.size;
+      const tree = info.type === "Tree";
+      return { x: p.x, y: p.z, r: s ? (tree ? Math.min(2, Math.max(0.6, s[0] * 0.18)) : Math.max(0.5, Math.max(s[0], s[1]) / 2)) : 1 };
+    });
+    const info = (crc) => { const p = libByCrc.get(crc) || {}; return { size: p.size, tree: p.type === "Tree" }; };
+    const res = scatter(heights, existing, info, { layers: ls, area, seed, avoid, avoidLines, avoidWater, avoidBlocked });
+    if (dryRun) return { stats: res.stats, count: res.items.length };
+    const added = [];
+    change(() => {
+      for (const it of res.items) {
+        const o = { id: nextId++, crc: it.crc, ...fromScene(new THREE.Vector3(it.x, it.z, it.y)), yaw: it.yaw, pitch: 0, roll: 0, bias: 0 };
+        objects.push(o); added.push(o);
+      }
+    });
+    return { stats: res.stats, count: added.length, ids: added.map((o) => o.id) };
   },
   catalog: (query) => window.studio.catalog(query || {}),
   list_prefabs: () => window.studio.prefabs(),

@@ -103,6 +103,49 @@ server.registerTool("mapstudio_spline", {
     depth: z.number().positive().optional(), maxGrade: z.number().positive().optional(), smooth: z.number().positive().optional(), block: z.boolean().optional(), seed: z.number().optional() }
 }, tool((a) => call("spline", a)));
 
+const box = z.tuple([z.number(), z.number(), z.number(), z.number()]);
+server.registerTool("mapstudio_terrain_generate", {
+  title: "Generovať terén",
+  description: `Reliéf zo šumu + erózia v oblasti (jeden krok Späť). area [x0,y0,x1,y1] m (inak celá mapa), blend m (prechod do starého terénu), base m (stredná výška),
+hills { amplitude m (8), scale m veľkosť tvarov (140), octaves (5), ridged 0–1 hrebene (0.15), warp m (25) },
+rim { box [x0,y0,x1,y1] hrateľná plocha, width m (60), height m (30), ridged (0.6), scale (90) } = hory mimo boxu,
+calm [{ points, radius, factor 0–1 }] = menej reliéfu pri cestách / údoliach, flats [{ x, y, r, blend (12), height? }] = rovné plochy po erózii,
+erosion { droplets (30000), strength (1), thermal (20), talus ° (35) }, seed. ${POS}`,
+  inputSchema: { area: box.optional(), blend: z.number().optional(), base: z.number().optional(), seed: z.number().optional(),
+    hills: z.object({ amplitude: z.number(), scale: z.number(), octaves: z.number().int(), ridged: z.number(), warp: z.number() }).partial().optional(),
+    rim: z.object({ box, width: z.number().optional(), height: z.number().optional(), ridged: z.number().optional(), scale: z.number().optional() }).optional(),
+    calm: z.array(z.object({ points: z.array(point).min(2), radius: z.number(), factor: z.number() })).optional(),
+    flats: z.array(z.object({ x: z.number(), y: z.number(), r: z.number(), blend: z.number().optional(), height: z.number().optional() })).optional(),
+    erosion: z.object({ droplets: z.number().int(), strength: z.number(), thermal: z.number().int(), talus: z.number() }).partial().optional() }
+}, tool((a) => call("terrain_generate", a)));
+
+const texRef = z.union([z.number(), z.string()]);
+server.registerTool("mapstudio_auto_texture", {
+  title: "Automatické textúry",
+  description: `Textúry podľa pravidiel (jeden krok Späť); pre každú 1 m bunku vyhrá prvé pravidlo, ktoré sedí. Pravidlo: texture (číslo alebo herná cesta),
+slope [min,max] °, height [min,max] m, water = max vzdialenosť od vody m, noise { scale m, min, max } (-1..1), jitter ° (3, roztrhaný okraj).
+keep = textúry, ktoré sa neprepíšu (cesty, dlažba). area [x0,y0,x1,y1] m. ${POS}`,
+  inputSchema: { rules: z.array(z.object({ texture: texRef, slope: z.tuple([z.number(), z.number()]).optional(), height: z.tuple([z.number(), z.number()]).optional(),
+    water: z.number().optional(), noise: z.object({ scale: z.number(), min: z.number().optional(), max: z.number().optional() }).optional(), jitter: z.number().optional() })).min(1),
+    keep: z.array(texRef).optional(), area: box.optional(), seed: z.number().optional() }
+}, tool((a) => call("auto_texture", a)));
+
+server.registerTool("mapstudio_scatter", {
+  title: "Rozmiestniť biómy",
+  description: `Rozmiestni objekty vo vrstvách ako prírodné mapy (jeden krok Späť, dryRun = len štatistika). Vrstva: name, items [{ crc|name, weight }], density na ha oblasti,
+cluster { radius m, size } = háje (zhluky), near { layer, radius, chance } = podrast pri stromoch inej vrstvy, mask { scale m, min -1..1, fade } = lesné škvrny s rednúcim okrajom,
+spacing m (v rámci vrstvy), clearance m (k iným objektom, 1), slope [min,max] °, height [min,max] m, onTextures / avoidTextures, sink 0–1 (zapustenie skál), maxGroundRange m (1,5), yaw.
+Všetko: area [x0,y0,x1,y1], avoid [{x,y,r}] (rezervované plochy), avoidLines [{points,radius}] (cesty), avoidWater m (3), avoidBlocked (true), seed. Rozmery z katalógu assetov. ${POS}`,
+  inputSchema: { area: box.optional(), seed: z.number().optional(), dryRun: z.boolean().optional(), avoidWater: z.number().optional(), avoidBlocked: z.boolean().optional(),
+    avoid: z.array(z.object({ x: z.number(), y: z.number(), r: z.number() })).optional(),
+    avoidLines: z.array(z.object({ points: z.array(point).min(2), radius: z.number() })).optional(),
+    layers: z.array(z.object({ name: z.string(), items: z.array(z.object({ crc: z.number().optional(), name: z.string().optional(), weight: z.number().optional() })).min(1),
+      density: z.number().optional(), count: z.number().int().optional().describe("presný počet (dominanty)"), blocked: z.enum(["avoid", "only", "any"]).optional(), cluster: z.object({ radius: z.number(), size: z.number() }).optional(), near: z.object({ layer: z.string(), radius: z.number(), chance: z.number().optional() }).optional(),
+      mask: z.object({ scale: z.number(), min: z.number(), fade: z.number().optional(), seed: z.number().optional() }).optional(),
+      spacing: z.number().optional(), clearance: z.number().optional(), slope: z.tuple([z.number(), z.number()]).optional(), height: z.tuple([z.number(), z.number()]).optional(),
+      onTextures: z.array(texRef).optional(), avoidTextures: z.array(texRef).optional(), sink: z.number().optional(), maxGroundRange: z.number().optional(), yaw: z.number().optional() })).min(1) }
+}, tool((a) => call("scatter", a)));
+
 server.registerTool("mapstudio_catalog", {
   title: "Katalóg assetov",
   description: "Skutočné rozmery (m, šírka × hĺbka × výška z modelu), kolízia (.mdatr / kmeň), textúry, kategória (tree, plant, rock, building, wall, bridge, light, monument, prop, other), zdroj (client / fem / editor), dostupnosť v hre a ručné hodnotenie. usable = v hre funguje (Fem: po zabalení). Varovania: granny-v7 (hra ho bez prevodu nezobrazí), editor-only, texture-missing, huge, tiny, no-collision, needs-packing. Funguje aj bez spusteného Map Studia; obnova: node tools/build-catalog.js.",
