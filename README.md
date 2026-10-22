@@ -267,6 +267,19 @@ Z ručnej práce na mape Priesmyk Bieleho vlka (`_exports/apix_farm_02/tools/bui
   zhora zmizne a nezakryje mapu. Pozor na textúry v priečinku s bodkou v mene (`snow.m`): konverzia GR2 → FBX ich nenájde a model
   zostane neviditeľný; textúru skopíruj k modelu.
 
+### Úprava máp, ktoré sú v hre (fáza 10)
+
+- **Z hry…** (MCP `mapstudio_open_live_map`): pracovná kópia `<mapa>_live` sa vytvorí priamo zo ZIP-u, ktorý číta hra, s vlastnou
+  kópiou sady textúr (`.live-source.json` si pamätá pack a odtlačky ZIP-ov). Existujúca ručná kópia sa prevezme, ak je zhodná s hrou.
+  V zozname funguje aj „yongan“, „joan“, „pyungmoo“.
+- **Do hry…** pri takej kópii (MCP `mapstudio_live_diff`, `mapstudio_live_stage`): ukáže zmenené súbory oproti hre, koľko pôvodných
+  objektov ostalo presne, zmenilo sa alebo pribudlo, či sa medzitým nezmenila hra, a pripraví do `_map_exports/<mapa>_update_<čas>`
+  nové ZIP-y pre bin aj dist (aj `textureset.zip`, ak pribudla textúra), voľné súbory, `report.md` a `deploy.sh`, ktorý najprv zálohuje
+  (`_codex_backups/…`, `ROLLBACK.md`). Nasadenie je samostatný krok pri zatvorenom klientovi.
+- **Kontrola** pri kópii z hry ukáže len problémy, ktoré pribudli úpravou; tie, ktoré má mapa v hre už teraz, zhrnie do jedného riadku
+  (pôvodný stav sa zapíše pri prvom otvorení nezmenenej kópie).
+- ZIP-y číta a píše `mapgen/zipfile.js` (stored + deflate ako libzip v klientovi; prázdne súbory klient preskakuje). Test `test/live.js`.
+
 ## Ďalšie fázy
 
 2. ~~Štetce terénu (výška, textúry, voda, atribúty).~~ Hotové.

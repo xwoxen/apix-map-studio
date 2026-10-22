@@ -9,7 +9,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node test/roundtrip.js && node test/conformance.js && node test/terrain.js && node test/export.js && node --no-warnings test/gen.js"
+    "test": "node test/roundtrip.js && node test/conformance.js && node test/live.js && node test/terrain.js && node test/export.js && node --no-warnings test/gen.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",

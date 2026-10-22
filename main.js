@@ -141,7 +141,9 @@ function openMap(dir) {
     objects = objects.concat(parseAreaData(readText(path.join(tdir, "AreaData.txt")), key, legacyRotation), parseAmbienceData(readText(path.join(tdir, "AreaAmbienceData.txt")), key));
   }
   const envName = (setting.match(/^Environment[ \t]+([^\r\n]*)/m) || [0, ""])[1].trim();
-  return { dir, name: path.basename(dir), size, textures, textureSetFile, terrains, objects, environment: loadEnvironment(envName), legacyRotation };
+  const liveFile = path.join(dir, ".live-source.json");
+  const live = fs.existsSync(liveFile) ? JSON.parse(fs.readFileSync(liveFile, "utf8")) : null;   // working copy of a map in the game
+  return { dir, name: path.basename(dir), size, textures, textureSetFile, terrains, objects, environment: loadEnvironment(envName), legacyRotation, live };
 }
 
 /* ---------- models: GR2 -> FBX cache ---------- */
@@ -566,6 +568,22 @@ ipcMain.handle("character:get", (_, cls) => characterParts(cls));
 ipcMain.handle("collision:grid", (_, objects, size) => collisionGrid(objects, size));
 // game export: staging only (APIX/_map_exports/<map>_<time>); deploying stays a separate, confirmed step
 ipcMain.handle("game:suggest", (_, dir, size) => suggestSlot(path.basename(dir), size));
+// maps that are live in the game: working copy, difference to the game, staged update (deploying stays a confirmed step)
+const liveMap = require("./mapgen/live-map");
+ipcMain.handle("live:list", () => liveMap.liveMaps().map(({ name, pack, size }) => ({ name, pack, size, copy: fs.existsSync(path.join(EDITOR_ROOT, name + "_live")) })));
+ipcMain.handle("live:import", (_, name) => liveMap.importLiveMap(name));
+ipcMain.handle("live:diff", (_, dir) => liveMap.diffLiveMap(dir));
+ipcMain.handle("live:stage", (_, dir) => {
+  const d = new Date(), two = (n) => String(n).padStart(2, "0");
+  const stamp = `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
+  return liveMap.stageLiveUpdate(dir, path.join(APIX_ROOT, "_map_exports", `${liveMap.readMarker(dir).map}_update_${stamp}`));
+});
+ipcMain.handle("live:baseline", (_, dir, baseline) => {
+  const f = path.join(dir, liveMap.MARKER), m = JSON.parse(fs.readFileSync(f, "utf8"));
+  m.baseline = baseline;
+  fs.writeFileSync(f, JSON.stringify(m, null, 1));
+  return true;
+});
 ipcMain.handle("game:export", (_, dir, opts) => {
   const d = new Date(), two = (n) => String(n).padStart(2, "0");
   const stamp = `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;

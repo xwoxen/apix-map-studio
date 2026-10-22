@@ -356,9 +356,33 @@ server.registerTool("mapstudio_window_screenshot", {
   inputSchema: {}
 }, tool(() => call("window_screenshot")));
 
+server.registerTool("mapstudio_list_live_maps", {
+  title: "Mapy v hre",
+  description: "Mapy z packu klienta, ktoré sa dajú upraviť cez pracovnú kópiu (meno, pack, veľkosť, či kópia <mapa>_live existuje). Yongan = metin2_map_a1, Joan = metin2_map_b1, Pyungmoo = metin2_map_c1.",
+  inputSchema: {}
+}, tool(() => call("list_live_maps")));
+
+server.registerTool("mapstudio_open_live_map", {
+  title: "Otvoriť mapu z hry",
+  description: "Vytvorí (alebo otvorí existujúcu) pracovnú kópiu <mapa>_live z ZIP-u, ktorý číta hra, s vlastnou kópiou sady textúr, a otvorí ju. Hru nemení. Odmietne, ak má otvorená mapa neuložené zmeny.",
+  inputSchema: { name: z.string() }
+}, tool((a) => call("open_live_map", a)));
+
+server.registerTool("mapstudio_live_diff", {
+  title: "Rozdiel kópie oproti hre",
+  description: "Pre otvorenú kópiu mapy z hry: zmenené súbory oproti ZIP-u v hre, pôvodné objekty zachované / zmenené / zmazané, pridané objekty, zmena sady textúr, poznámky (stará minimapa, server_attr) a problémy (hra sa zmenila od importu, prázdne súbory). Číta uložené súbory.",
+  inputSchema: {}
+}, tool(() => call("live_diff")));
+
+server.registerTool("mapstudio_live_stage", {
+  title: "Pripraviť update do hry",
+  description: "Z uloženej kópie pripraví do APIX/_map_exports/<mapa>_update_<čas> nové ZIP-y (bin aj dist), voľné súbory, report.md a deploy.sh, ktorý najprv všetko zálohuje (ROLLBACK.md). Hru nemení – deploy.sh sa spúšťa až po súhlase, pri zatvorenom klientovi.",
+  inputSchema: {}
+}, tool(() => call("live_stage")));
+
 server.registerTool("mapstudio_check_map", {
   title: "Kontrola mapy",
-  description: "Kontrola pred nasadením: objekty mimo mapy, neznáme CRC, chýbajúce modely, objekty vo vode alebo vo vzduchu, chýbajúce textúry, voda bez atribútu.",
+  description: "Kontrola pred nasadením: objekty mimo mapy, neznáme CRC, chýbajúce modely, objekty vo vode alebo vo vzduchu, chýbajúce textúry, voda bez atribútu, rozpočet objektov, nedosiahnuteľné spawny. Pri kópii mapy z hry ukáže len nové problémy (pôvodné z hry zhrnie v known_in_game).",
   inputSchema: {}
 }, tool(() => call("check_map")));
 

@@ -145,6 +145,7 @@ async function openMap(dir) {
   const w = map.size[0] * 256;
   camera.far = Math.max(6000, w * 6); camera.updateProjectionMatrix();
   environment.apply(map.environment, view);
+  if (map.live && !map.live.baseline) setTimeout(recordLiveBaseline, 0);
   envName = map.environment ? map.environment.name : ""; envDirty = false;
   $("empty-state").hidden = true;
   updateUi();
@@ -1365,10 +1366,10 @@ async function exportMaps() {
   return { minimaps: heights.chunks.size, shadows: shade.length, litShare: +lit.toFixed(3), atlas: `${aw}x${ah}`, folder: r.folder, files: r.files, backup: r.backup, preview: r.preview };
 }
 
-async function checkMap() {
+async function checkMap({ raw = false } = {}) {
   requireMap();
   const issues = [];
-  const add = (level, kind, message, ids) => issues.push({ level, kind, message, ...(ids && ids.length ? { ids: ids.slice(0, 50) } : {}) });
+  const add = (level, kind, message, ids) => issues.push({ level, kind, message, ...(ids && ids.length ? { ids: ids.slice(0, 50), allIds: ids } : {}) });
   const W = map.size[0] * 256, D = map.size[1] * 256;
 
   const outside = objects.filter((o) => { const p = toScene(o); return p.x < 0 || p.z < 0 || p.x >= W || p.z >= D; });
@@ -1433,7 +1434,81 @@ async function checkMap() {
     if (lost.length) add("warning", "spawn_unreachable", `${lost.length} spawnov sa nedá z Townu dosiahnuť pešo (oddelená plocha).`);
   }
   if (dirty || spawnsDirty || heights.isDirty) add("info", "unsaved", "Mapa má neuložené zmeny.");
-  return { ok: !issues.some((i) => i.level === "error"), objects: objects.length, issues };
+  // live copy: issues the game's own map already had are listed apart, only new ones count
+  const base = !raw && map.live && map.live.baseline;
+  let known = [];
+  if (base) {
+    const now = issueSignatures(issues);
+    const fresh = [];
+    for (const i of issues) {
+      const sig = i.kind + "|" + ((i.message.match(/Terén (\d{6})/) || [])[1] || ""), b = base[sig], n = now[sig];
+      const newObjects = b ? n.objects.filter((k) => !b.objects.includes(k)) : n.objects;
+      const old = b && i.kind !== "unsaved" && (n.objects.length ? newObjects.length === 0 : n.count <= b.count);
+      if (old) known.push(i);
+      else {
+        if (b && newObjects.length) { i.message += ` (z toho nové: ${newObjects.length})`; i.ids = (i.allIds || []).filter((id) => newObjects.includes(objectKey(objects.find((o) => o.id === id) || {}))).slice(0, 50); }
+        fresh.push(i);
+      }
+    }
+    issues.length = 0;
+    issues.push(...fresh);
+    if (known.length) issues.push({ level: "info", kind: "known_in_game", message: `${known.length} upozornení má už mapa v hre (pôvodné dáta) – skryté.`, known: known.map((i) => i.message) });
+  }
+  if (!raw) for (const i of issues) delete i.allIds;              // raw: the baseline needs every object
+  return { ok: !issues.some((i) => i.level === "error"), objects: objects.length, issues, ...(base ? { comparedWithGame: true } : {}) };
+}
+
+/* ---------- maps that are live in the game ---------- */
+const YONGAN_ALIASES = { yongan: "metin2_map_a1", joan: "metin2_map_b1", pyungmoo: "metin2_map_c1" };
+let liveMaps = [];
+async function openLiveDialog() {
+  if ((dirty || envDirty || spawnsDirty || (heights && heights.isDirty)) && !confirmDiscard()) return;
+  $("live-error").textContent = "";
+  liveMaps = await window.studio.liveList();
+  renderLiveList();
+  $("live-dlg").showModal();
+  $("live-filter").focus();
+}
+function renderLiveList() {
+  const q = $("live-filter").value.trim().toLowerCase(), alias = YONGAN_ALIASES[q];
+  $("live-map").innerHTML = liveMaps.filter((m) => !q || m.name.toLowerCase().includes(q) || m.pack.toLowerCase().includes(q) || m.name === alias)
+    .map((m) => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} · ${m.size.join("×")} · ${escapeHtml(m.pack)}${m.copy ? " · kópia existuje" : ""}</option>`).join("");
+  if ($("live-map").options.length) $("live-map").selectedIndex = 0;
+}
+$("btn-live").addEventListener("click", openLiveDialog);
+$("live-close").addEventListener("click", () => $("live-dlg").close());
+$("live-filter").addEventListener("input", renderLiveList);
+$("live-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("live-map").value;
+  if (!name) return;
+  try {
+    const r = await window.studio.liveImport(name);
+    $("live-dlg").close();
+    setMsg(r.existed ? `Otváram existujúcu kópiu ${r.copy}` : `Kópia ${r.copy} vytvorená z ${r.marker.pack}.zip`);
+    await openMap(r.copy);
+  } catch (err) { $("live-error").textContent = String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""); }
+});
+
+// The first time a live copy opens unchanged, the map check of the game's own state is stored; later checks show only
+// what the edits added (official maps carry many old issues: water without attribute, unusable bridges, ...).
+async function recordLiveBaseline() {
+  try {
+    const d = await window.studio.liveDiff(map.dir);
+    if (d.changes.length) return;                                       // already edited: no clean baseline to take
+    const r = await checkMap({ raw: true });
+    map.live.baseline = issueSignatures(r.issues);
+    await window.studio.liveBaseline(map.dir, map.live.baseline);
+  } catch (e) { console.warn("baseline", e); }
+}
+function objectKey(o) { const p = toScene(o); return `${o.crc}@${Math.round(p.x)},${Math.round(p.z)}`; }
+function issueSignatures(issues) {
+  const out = {};
+  for (const i of issues) {
+    const sig = i.kind + "|" + ((i.message.match(/Terén (\d{6})/) || [])[1] || "");
+    out[sig] = { count: Number((i.message.match(/(\d+)/) || [])[1] || 0), objects: (i.allIds || []).map((id) => objectKey(objects.find((o) => o.id === id) || {})) };
+  }
+  return out;
 }
 
 function showReport(title, html) {
@@ -1489,7 +1564,30 @@ async function runGameExport(opts) {
   await exportMaps();
   return window.studio.gameExport(map.dir, opts);
 }
-$("btn-game").addEventListener("click", openGameExport);
+$("btn-game").addEventListener("click", () => (map && map.live ? openLiveUpdate() : openGameExport()));
+async function openLiveUpdate() {
+  if (dirty || envDirty || spawnsDirty || heights.isDirty) { setMsg("Najprv ulož mapu – update do hry sa robí z uložených súborov.", true); return; }
+  let d;
+  try { d = await window.studio.liveDiff(map.dir); } catch (err) { setMsg("Porovnanie s hrou zlyhalo: " + String(err.message || err), true); return; }
+  const rows = d.changes.map((c) => `<li>${escapeHtml(c.textureSet ? "sada textúr " + c.member : c.terrain + "/" + c.file)}${c.isNew ? " (nový)" : ""}</li>`).join("");
+  const objs = Object.entries(d.objects).map(([t, o]) => `<li>${t}: pôvodných ${o.before}, zachovaných ${o.kept}, zmenených/zmazaných <b>${o.removedOrChanged}</b>, pridaných ${o.added}</li>`).join("");
+  showReport(`Update do hry: ${d.map}`, `${d.problems.length ? `<p class="warn">${d.problems.map(escapeHtml).join("<br>")}</p>` : ""}
+    <p>${d.changes.length ? `Zmenené súbory oproti hre:` : "Kópia je rovnaká ako mapa v hre – nie je čo nasadiť."}</p><ul>${rows}</ul>
+    ${objs ? `<p>Objekty:</p><ul>${objs}</ul>` : ""}
+    ${d.notes.length ? `<p class="warn">${d.notes.map(escapeHtml).join("<br>")}</p>` : ""}
+    ${d.changes.length && !d.problems.length ? `<p><button type="button" class="primary" id="live-stage">Pripraviť balík do _map_exports</button></p>
+      <p class="sub">Pripraví nové ZIP-y (bin aj dist), voľné súbory, report.md a deploy.sh so zálohou. Hru to nemení.</p>` : ""}`);
+  const b = $("live-stage");
+  if (b) b.addEventListener("click", async () => {
+    b.disabled = true;
+    try {
+      const s = await window.studio.liveStage(map.dir);
+      $("report-body").insertAdjacentHTML("beforeend", `<p>Pripravené: <a href="#" class="link" id="live-reveal">${escapeHtml(s.outDir)}</a>. Nasadenie: zavri klienta a spusti <code>bash deploy.sh</code> (najprv zálohuje).</p>`);
+      $("live-reveal").addEventListener("click", (ev) => { ev.preventDefault(); window.studio.reveal(s.report); });
+      setMsg("Update do hry pripravený.");
+    } catch (err) { setMsg("Príprava zlyhala: " + String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""), true); b.disabled = false; }
+  });
+}
 $("game-close").addEventListener("click", () => $("game-dlg").close());
 $("game-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1800,6 +1898,20 @@ const API = {
   export: () => exportMaps(),
   suggest_game_slot() { requireMap(); return window.studio.gameSuggest(map.dir, map.size); },
   game_export({ index, base, goto: gotoAlias = null, objectCollision = true }) { return runGameExport({ index, base, gotoAlias, objectCollision }); },
+  list_live_maps: () => window.studio.liveList(),
+  async open_live_map({ name }) {
+    if (dirty || envDirty || spawnsDirty || (heights && heights.isDirty)) throw new Error("Otvorená mapa má neuložené zmeny – ulož ich alebo zahoď");
+    const r = await window.studio.liveImport(name);
+    await openMap(r.copy);
+    if (map.live && !map.live.baseline) await recordLiveBaseline();
+    return { copy: r.copy, created: !r.existed, pack: r.marker.pack, ...API.status() };
+  },
+  live_diff() { requireMap(); if (!map.live) throw new Error("Otvorená mapa nie je kópia mapy z hry"); return window.studio.liveDiff(map.dir); },
+  async live_stage() {
+    requireMap(); if (!map.live) throw new Error("Otvorená mapa nie je kópia mapy z hry");
+    if (dirty || envDirty || spawnsDirty || heights.isDirty) throw new Error("Najprv ulož mapu");
+    return window.studio.liveStage(map.dir);
+  },
   async save() { requireMap(); await save(); return { message: $("st-msg").textContent, unsaved: { objects: dirty, terrain: heights.isDirty, spawns: spawnsDirty } }; },
   undo() { undo(); return { undo: undoStack.length, redo: redoStack.length }; },
   redo() { redo(); return { undo: undoStack.length, redo: redoStack.length }; },

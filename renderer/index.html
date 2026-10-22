@@ -14,6 +14,7 @@
   <div class="brand">APIX <span>Map Studio</span></div>
   <button type="button" id="btn-new" title="Nová mapa (Ctrl+N)">Nová</button>
   <button type="button" id="btn-open" title="Otvoriť mapu (Ctrl+O)">Otvoriť</button>
+  <button type="button" id="btn-live" title="Pracovná kópia mapy, ktorá je v hre (úpravy sa do hry dostanú cez Do hry…)">Z hry…</button>
   <button type="button" id="btn-save" class="primary" title="Uložiť objekty (Ctrl+S)" disabled>Uložiť</button>
   <span class="sep"></span>
   <div class="seg" role="group" aria-label="Nástroj">
@@ -200,6 +201,18 @@
   </form>
 </dialog>
 
+<dialog class="report" id="live-dlg">
+  <form method="dialog" id="live-form" class="new-form">
+    <div class="report-head"><h2>Mapa z hry</h2><button type="button" id="live-close" aria-label="Zavrieť">✕</button></div>
+    <div class="report-body form-grid">
+      <label for="live-filter">Hľadať</label><input id="live-filter" placeholder="napr. a1, yongan">
+      <label for="live-map">Mapa</label><select id="live-map" size="10"></select>
+      <p class="sub" style="grid-column: 1 / -1">Vytvorí pracovnú kópiu &lt;mapa&gt;_live z balíka, ktorý číta hra (aj s vlastnou sadou textúr). Ak kópia existuje, otvorí ju. Hru to nemení.</p>
+      <p class="warn" id="live-error" style="grid-column: 1 / -1"></p>
+      <div class="row-actions"><button type="submit" class="primary">Otvoriť</button></div>
+    </div>
+  </form>
+</dialog>
 <dialog class="report" id="game-dlg">
   <form method="dialog" id="game-form" class="new-form">
     <div class="report-head"><h2>Export do hry</h2><button type="button" id="game-close" aria-label="Zavrieť">✕</button></div>
