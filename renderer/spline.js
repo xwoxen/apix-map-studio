@@ -3,7 +3,8 @@
 //  road:  terrain levelled to a smoothed, grade-limited profile across the core width, blended out over the edge band;
 //         core texture with a ragged border, edge texture as a worn shoulder.
 //  river: bed carved below a profile that only ever falls along the curve (water flows from the first point), rounded
-//         cross-section, banks blended back to the original ground; water surface, water attribute, optional block.
+//         cross-section, banks blended back to the original ground; water surface, water attribute, optional block
+//         (water: false = frozen or dry bed, only the shape and textures).
 //  ridge: wooded crest between two areas (seams of imported regions, zone borders): crest `height` m above the higher of
 //         both sides, rounded top with noise, flanks blended into the ground; texture with a ragged edge, steepTexture on
 //         slopes over 30 degrees, block attribute over the crest (default).
@@ -59,7 +60,7 @@ function nearestIndex(samples) {
 
 /**
  * opts: { kind: "road" | "river" | "ridge", points: [[x, y], ...] (m), width (core m), edge (band m), texture, edgeTexture, bedTexture
- *         (texture indices), steepTexture (ridge), height (ridge m), depth (river m), maxGrade (road, rise per metre), smooth (profile window m), block (river),
+ *         (texture indices), steepTexture (ridge), height (ridge m), depth (river m), water (river, false = frozen / dry bed: no surface, no water attribute), maxGrade (road, rise per metre), smooth (profile window m), block (river),
  *         seed, attrFlags: { water, block } bit values }
  * returns { keys, parts, length, profile: [min, max] m, waterLevels }
  */
@@ -146,7 +147,7 @@ export function applySpline(model, opts) {
   }
   if (keys.size) parts.add("tile");
   if (kind === "ridge" && opts.block) parts.add("attr");
-  if (kind === "river") {
+  if (kind === "river" && opts.water !== false) {
     const depth = opts.depth ?? 2;
     const flags = opts.attrFlags || {};
     for (let cy = Math.max(0, minCy); cy < Math.min(model.depthCells, maxCy); cy++) for (let cx = Math.max(0, minCx); cx < Math.min(model.widthCells, maxCx); cx++) {

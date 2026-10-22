@@ -8,7 +8,9 @@ import { fbm, rng, smoothstep, polylineDistance } from "./noise.js";
  *  area [x0, y0, x1, y1] m (default whole map), blend m (border blend into the old ground, default 0 for the whole map)
  *  base m (default: current mean height of the area)
  *  hills: { amplitude m (8), scale m feature size (140), octaves (5), ridged 0..1 (0.15), warp m (25) }
+ *  anchors: [{ x, y, h }]   height plan: the base follows these heights (inverse distance weighting) instead of one level
  *  rim: { box [x0, y0, x1, y1] playable area, width m (60), height m (30), ridged (0.6), scale (90) }   mountains outside the box
+ *       or open: [{ x, y, r } | { points, radius }] instead of box: mountains outside any shape (valleys, clearings, paths)
  *  calm: [{ points [[x, y], ...], radius m, factor 0..1 }]   noise multiplied by factor near the polylines (roads, valleys)
  *  flats: [{ x, y, r, blend (12), height? }]                 level pads after erosion (towns, plazas)
  *  erosion: { droplets (30000), strength (1), thermal iterations (20), talus deg (35) }
@@ -25,6 +27,19 @@ export function generateTerrain(model, opts = {}) {
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { old[j * nx + i] = model.raw(cx0 + i, cy0 + j) / 200; mean += old[j * nx + i]; }
   mean /= N;
   const base = opts.base ?? mean;
+  const anchors = opts.anchors && opts.anchors.length ? opts.anchors : null;
+  const baseAt = (x, y) => {
+    if (!anchors) return base;
+    let sw = 0, sh = 0;
+    for (const a of anchors) { const d2 = (a.x - x) ** 2 + (a.y - y) ** 2; if (d2 < 1) return a.h; const w = 1 / (d2 * Math.sqrt(d2)); sw += w; sh += w * a.h; }
+    return sh / sw;
+  };
+  // distance outside the open shapes (< 0 inside)
+  const outside = (x, y) => {
+    let d = Infinity;
+    for (const o of rim.open) d = Math.min(d, o.points ? polylineDistance(o.points, x, y) - o.radius : Math.hypot(o.x - x, o.y - y) - o.r);
+    return d;
+  };
   const hills = { amplitude: 8, scale: 140, octaves: 5, ridged: 0.15, warp: 25, ...(opts.hills || {}) };
   const relief = fbm(seed, { octaves: hills.octaves, ridged: hills.ridged });
   const warpX = fbm(seed + 31, { octaves: 3 }), warpY = fbm(seed + 47, { octaves: 3 });
@@ -37,16 +52,16 @@ export function generateTerrain(model, opts = {}) {
     const wx = x + warpX(x / 200, y / 200) * hills.warp, wy = y + warpY(x / 200, y / 200) * hills.warp;
     let f = 1;
     for (const c of calm) { const d = polylineDistance(c.points, x, y); f = Math.min(f, c.factor + (1 - c.factor) * smoothstep(d / c.radius)); }
-    let h = base + hills.amplitude * relief(wx / hills.scale, wy / hills.scale) * f;
+    const b0 = baseAt(x, y);
+    let h = b0 + hills.amplitude * relief(wx / hills.scale, wy / hills.scale) * f;
     if (rim) {
-      const [bx0, by0, bx1, by1] = rim.box;
-      const out = Math.max(bx0 - x, x - bx1, by0 - y, y - by1);           // > 0 outside the playable box
+      const out = rim.open ? outside(x, y) : Math.max(rim.box[0] - x, x - rim.box[2], rim.box[1] - y, y - rim.box[3]);   // > 0 outside the playable area
       if (out > -rim.width * 0.15) {
         const t = smoothstep((out + rim.width * 0.15) / rim.width);
         h += t * rim.height * (0.65 + 0.35 * rimNoise(wx / rim.scale, wy / rim.scale)) + t * t * rim.height * 0.4;
       }
     }
-    H[j * nx + i] = opts.mode === "add" ? old[j * nx + i] + (h - base) : h;       // add: relief / rim on top of the current ground
+    H[j * nx + i] = opts.mode === "add" ? old[j * nx + i] + (h - b0) : h;       // add: relief / rim on top of the current ground
   }
   const er = { droplets: opts.mode === "add" ? 0 : 30000, strength: 1, thermal: opts.mode === "add" ? 0 : 20, talus: 35, ...(opts.erosion || {}) };
   if (er.droplets > 0) hydraulic(H, nx, ny, er, seed);

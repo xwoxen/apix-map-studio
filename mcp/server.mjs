@@ -97,10 +97,10 @@ server.registerTool("mapstudio_search_library", {
 
 server.registerTool("mapstudio_spline", {
   title: "Cesta, rieka alebo hrebeň po krivke",
-  description: `Plynulá krivka cez body. road: terén vyrovnaný do plynulého profilu s obmedzeným stúpaním (maxGrade, m na m, predvolene 0,12), krajnica edge m, textúra jadra s nepravidelným okrajom, edgeTexture ako vyšliapaná krajnica. river: koryto, ktoré po prúde (od prvého bodu) len klesá, hĺbka depth m, svahy brehov edge m, hladina 70 % hĺbky, atribút voda, block = neprechodná (predvolene true), bedTexture dno, texture breh. ridge: zalesnený hrebeň medzi oblasťami (švy importov, hranice zón), vrchol height m (12) nad vyššou stranou, šírka width (30), svahy edge, texture + steepTexture na svahoch nad 30°, block (predvolene true). Textúry: číslo mapy alebo herná cesta. Jeden krok Späť. ${POS}`,
+  description: `Plynulá krivka cez body. road: terén vyrovnaný do plynulého profilu s obmedzeným stúpaním (maxGrade, m na m, predvolene 0,12), krajnica edge m, textúra jadra s nepravidelným okrajom, edgeTexture ako vyšliapaná krajnica. river: koryto, ktoré po prúde (od prvého bodu) len klesá, hĺbka depth m, svahy brehov edge m, hladina 70 % hĺbky, atribút voda, block = neprechodná (predvolene true), bedTexture dno, texture breh, water false = zamrznuté / suché koryto bez hladiny. ridge: zalesnený hrebeň medzi oblasťami (švy importov, hranice zón), vrchol height m (12) nad vyššou stranou, šírka width (30), svahy edge, texture + steepTexture na svahoch nad 30°, block (predvolene true). Textúry: číslo mapy alebo herná cesta. Jeden krok Späť. ${POS}`,
   inputSchema: { kind: z.enum(["road", "river", "ridge"]), height: z.number().positive().optional(), steepTexture: z.union([z.number(), z.string()]).optional(), points: z.array(point).min(2).max(500), width: z.number().positive().optional(), edge: z.number().positive().optional(),
     texture: z.union([z.number(), z.string()]).optional(), edgeTexture: z.union([z.number(), z.string()]).optional(), bedTexture: z.union([z.number(), z.string()]).optional(),
-    depth: z.number().positive().optional(), maxGrade: z.number().positive().optional(), smooth: z.number().positive().optional(), block: z.boolean().optional(), seed: z.number().optional() }
+    depth: z.number().positive().optional(), water: z.boolean().optional(), maxGrade: z.number().positive().optional(), smooth: z.number().positive().optional(), block: z.boolean().optional(), seed: z.number().optional() }
 }, tool((a) => call("spline", a)));
 
 const box = z.tuple([z.number(), z.number(), z.number(), z.number()]);
@@ -108,12 +108,13 @@ server.registerTool("mapstudio_terrain_generate", {
   title: "Generovať terén",
   description: `Reliéf zo šumu + erózia v oblasti (jeden krok Späť). area [x0,y0,x1,y1] m (inak celá mapa), blend m (prechod do starého terénu), base m (stredná výška),
 hills { amplitude m (8), scale m veľkosť tvarov (140), octaves (5), ridged 0–1 hrebene (0.15), warp m (25) },
-rim { box [x0,y0,x1,y1] hrateľná plocha, width m (60), height m (30), ridged (0.6), scale (90) } = hory mimo boxu,
+rim { box [x0,y0,x1,y1] hrateľná plocha alebo open [{x,y,r} | {points,radius}] tvary údolí a ciest, width m (60), height m (30), ridged (0.6), scale (90) } = hory mimo boxu / tvarov, anchors [{x,y,h}] výškový plán (údolie stúpa podľa bodov),
 calm [{ points, radius, factor 0–1 }] = menej reliéfu pri cestách / údoliach, flats [{ x, y, r, blend (12), height? }] = rovné plochy po erózii,
 erosion { droplets (30000), strength (1), thermal (20), talus ° (35) }, seed. ${POS}`,
   inputSchema: { area: box.optional(), blend: z.number().optional(), base: z.number().optional(), seed: z.number().optional(), mode: z.enum(["replace", "add"]).optional().describe("add = pridá reliéf / hory k existujúcemu terénu"),
     hills: z.object({ amplitude: z.number(), scale: z.number(), octaves: z.number().int(), ridged: z.number(), warp: z.number() }).partial().optional(),
-    rim: z.object({ box, width: z.number().optional(), height: z.number().optional(), ridged: z.number().optional(), scale: z.number().optional() }).optional(),
+    anchors: z.array(z.object({ x: z.number(), y: z.number(), h: z.number() })).optional(),
+    rim: z.object({ box: box.optional(), open: z.array(z.union([z.object({ x: z.number(), y: z.number(), r: z.number() }), z.object({ points: z.array(point), radius: z.number() })])).optional(), width: z.number().optional(), height: z.number().optional(), ridged: z.number().optional(), scale: z.number().optional() }).optional(),
     calm: z.array(z.object({ points: z.array(point).min(2), radius: z.number(), factor: z.number() })).optional(),
     flats: z.array(z.object({ x: z.number(), y: z.number(), r: z.number(), blend: z.number().optional(), height: z.number().optional() })).optional(),
     erosion: z.object({ droplets: z.number().int(), strength: z.number(), thermal: z.number().int(), talus: z.number() }).partial().optional() }

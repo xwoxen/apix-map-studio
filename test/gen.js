@@ -53,5 +53,12 @@ const assert = require("assert");
   assert(crest > 178 && crest < 190 && flank < 171, `ridge crest ${crest} flank ${flank}`);
   assert(attr[128 * 256 + 128] & 1 && !(attr[128 * 256 + 200] & 1), "ridge crest blocked, meadow free");
   assert(model.tile(128, 128) === 4 && model.tile(200, 128) !== 4, "ridge texture");
+  h.fill(170 * 200);
+  generateTerrain(model, { seed: 4, hills: { amplitude: 0 }, erosion: { droplets: 0, thermal: 0 }, anchors: [{ x: 40, y: 220, h: 170 }, { x: 220, y: 40, h: 200 }],
+    rim: { open: [{ x: 40, y: 220, r: 25 }, { points: [[40, 220], [220, 40]], radius: 8 }, { x: 220, y: 40, r: 25 }], width: 30, height: 20 } });
+  const lo = model.at(40, 220), hi = model.at(220, 40), path = model.at(130, 130), off = model.at(220, 220);
+  assert(Math.abs(lo - 170) < 0.5 && Math.abs(hi - 200) < 0.5 && path > lo + 5 && path < hi - 5, `anchors ${lo} ${path} ${hi}`);
+  assert(off > model.at(130, 130) + 10, "mountains outside the open shapes: " + off);
+  console.log("ok: anchors", lo.toFixed(1), path.toFixed(1), hi.toFixed(1), "open-shape rim", off.toFixed(1));
   console.log("ok: ridge crest", crest.toFixed(1), "flank", flank.toFixed(1), rg.parts.size, "parts");
 })().catch((e) => { console.error(e); process.exit(1); });

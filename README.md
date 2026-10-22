@@ -225,6 +225,9 @@ dekódovať (`mapgen/lzo.js`) a sedí bunka po bunke s `attr.atr` – overuje `n
   otočením).
 - **Hrebeň** – `mapstudio_spline` s `kind: "ridge"`: zalesnený blokovaný val po krivke, vrchol nad vyššou stranou (skryje švy
   importov a oddelí zóny ako na oficiálnych mapách), textúra + `steepTexture` na svahoch.
+- **Výškový plán a údolia** – `terrain_generate` s `anchors: [{x,y,h}]` (údolie stúpa podľa bodov) a `rim.open` (hory okolo ľubovoľných
+  tvarov: kruhy zón a krivky ciest namiesto obdĺžnika).
+- **Zamrznutá rieka** – `spline kind: "river"` s `water: false`: koryto bez hladiny (ľad, suché koryto), bez schodov vody na strmom spáde.
 - **Terén navrch** – `terrain_generate` s `mode: "add"` pridá reliéf alebo hory k existujúcemu terénu (bez erózie).
 - **Atlas** – `python tools/map_atlas.py <mapa> <out.png> [--attr]`: minimapa s metrovou mriežkou a blokovanými bunkami, na
   výber oblastí.

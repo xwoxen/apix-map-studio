@@ -1595,12 +1595,12 @@ const API = {
     return { changed: [...parts] };
   },
   // road / river along a curve through points (one undo step); textures as map index or game path
-  async spline({ kind = "road", points, width = kind === "river" ? 6 : kind === "ridge" ? 30 : 5, edge, texture, edgeTexture, bedTexture, steepTexture, height, depth, maxGrade, smooth, block = kind !== "road", seed = 1 }) {
+  async spline({ kind = "road", points, width = kind === "river" ? 6 : kind === "ridge" ? 30 : 5, edge, texture, edgeTexture, bedTexture, steepTexture, height, depth, maxGrade, smooth, water = true, block = kind === "ridge" || (kind === "river" && water), seed = 1 }) {
     requireMap();
     if (!["road", "river", "ridge"].includes(kind)) throw new Error("kind: road, river alebo ridge");
     if (!Array.isArray(points) || points.length < 2) throw new Error("points: aspoň 2 body [x, y] v metroch");
     const tex = async (t) => (t === undefined ? undefined : typeof t === "number" ? t : (await API.add_texture({ game: t })).index);
-    const opts = { kind, points, width, edge, depth, height, maxGrade, smooth, block, seed, steepTexture: await tex(steepTexture),
+    const opts = { kind, points, width, edge, depth, height, water, maxGrade, smooth, block, seed, steepTexture: await tex(steepTexture),
       texture: await tex(texture ?? (kind === "road" ? "d:/ymir work/terrainmaps/a/field/field 02.dds" : kind === "river" ? "d:/ymir work/terrainmaps/a/beach/beach sand 01.dds" : undefined)),
       edgeTexture: await tex(edgeTexture), bedTexture: await tex(bedTexture ?? (kind === "river" ? "d:/ymir work/terrainmaps/12temple/stone_02.dds" : undefined)),
       attrFlags: { water: attrMask({ water: true }), block: attrMask({ block: true }) } };
