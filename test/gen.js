@@ -45,4 +45,13 @@ const assert = require("assert");
   }
   assert.deepStrictEqual(rotator(1, 200, 120).fwd(0, 0), [120, 0], "clockwise: north-west corner goes to north-east");
   console.log("ok: region rotator");
+  const { applySpline } = await import("../renderer/spline.js");
+  h.fill(170 * 200); attr.fill(0);
+  model.setAttr = (x, y, f, erase, keys) => { attr[y * 256 + x] = erase ? attr[y * 256 + x] & ~f : attr[y * 256 + x] | f; keys.add("000000"); };
+  const rg = applySpline(model, { kind: "ridge", points: [[128, 10], [128, 246]], width: 30, height: 12, texture: 4, steepTexture: 5, block: true, seed: 2, attrFlags: { block: 1 } });
+  const crest = model.at(128, 128), flank = model.at(128 + 40, 128);
+  assert(crest > 178 && crest < 190 && flank < 171, `ridge crest ${crest} flank ${flank}`);
+  assert(attr[128 * 256 + 128] & 1 && !(attr[128 * 256 + 200] & 1), "ridge crest blocked, meadow free");
+  assert(model.tile(128, 128) === 4 && model.tile(200, 128) !== 4, "ridge texture");
+  console.log("ok: ridge crest", crest.toFixed(1), "flank", flank.toFixed(1), rg.parts.size, "parts");
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -4,7 +4,12 @@
 //         core texture with a ragged border, edge texture as a worn shoulder.
 //  river: bed carved below a profile that only ever falls along the curve (water flows from the first point), rounded
 //         cross-section, banks blended back to the original ground; water surface, water attribute, optional block.
+//  ridge: wooded crest between two areas (seams of imported regions, zone borders): crest `height` m above the higher of
+//         both sides, rounded top with noise, flanks blended into the ground; texture with a ragged edge, steepTexture on
+//         slopes over 30 degrees, block attribute over the crest (default).
 // Positions are scene metres (x east, z = map y south). Heights in the model are raw (1 m = 200).
+
+import { fbm } from "./noise.js";
 
 const smoothstep = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
@@ -53,13 +58,13 @@ function nearestIndex(samples) {
 }
 
 /**
- * opts: { kind: "road" | "river", points: [[x, y], ...] (m), width (core m), edge (band m), texture, edgeTexture, bedTexture
- *         (texture indices), depth (river m), maxGrade (road, rise per metre), smooth (profile window m), block (river),
+ * opts: { kind: "road" | "river" | "ridge", points: [[x, y], ...] (m), width (core m), edge (band m), texture, edgeTexture, bedTexture
+ *         (texture indices), steepTexture (ridge), height (ridge m), depth (river m), maxGrade (road, rise per metre), smooth (profile window m), block (river),
  *         seed, attrFlags: { water, block } bit values }
  * returns { keys, parts, length, profile: [min, max] m, waterLevels }
  */
 export function applySpline(model, opts) {
-  const { kind, width, edge = kind === "river" ? 4 : 2.5, seed = 1 } = opts;
+  const { kind, width, edge = kind === "river" ? 4 : kind === "ridge" ? width * 0.8 : 2.5, seed = 1 } = opts;
   const half = width / 2, reach = half + edge + 1.5;
   const samples = catmullRom(opts.points, 1);
   const n = samples.length;
@@ -71,6 +76,17 @@ export function applySpline(model, opts) {
     const g = opts.maxGrade ?? 0.12;
     for (let i = 1; i < n; i++) target[i] = Math.min(Math.max(target[i], target[i - 1] - g), target[i - 1] + g);
     for (let i = n - 2; i >= 0; i--) target[i] = Math.min(Math.max(target[i], target[i + 1] - g), target[i + 1] + g);
+  } else if (kind === "ridge") {
+    // crest over the higher side: ground sampled across the curve at the outer edge of the flanks
+    const side = Float64Array.from(samples, ([x, y], i) => {
+      const [ax, ay] = samples[Math.max(0, i - 1)], [bx, by] = samples[Math.min(n - 1, i + 1)], l = Math.hypot(bx - ax, by - ay) || 1;
+      const nx = -(by - ay) / l, ny = (bx - ax) / l;
+      let m = model.at(x, y);
+      for (const d of [reach * 0.5, reach]) for (const sg of [-1, 1]) m = Math.max(m, model.at(x + nx * d * sg, y + ny * d * sg));
+      return m;
+    });
+    const hgt = opts.height ?? 12;
+    target = movingAverage(side, opts.smooth || 40).map((h, i) => h + hgt * (0.75 + 0.35 * noise1(i / 45, seed + 5)));
   } else {
     const depth = opts.depth ?? 2;
     for (let i = 1; i < n; i++) target[i] = Math.min(target[i], target[i - 1]);       // never flows uphill
@@ -81,6 +97,7 @@ export function applySpline(model, opts) {
   const minCx = Math.floor((Math.min(...samples.map((p) => p[0])) - reach) / 2), maxCx = Math.ceil((Math.max(...samples.map((p) => p[0])) + reach) / 2);
   const minCy = Math.floor((Math.min(...samples.map((p) => p[1])) - reach) / 2), maxCy = Math.ceil((Math.max(...samples.map((p) => p[1])) + reach) / 2);
   const updates = [];
+  const bumps = kind === "ridge" && fbm(seed + 11, { octaves: 4, ridged: 0.4 }), hgt = opts.height ?? 12;
   for (let cy = Math.max(0, minCy); cy <= Math.min(model.depthCells, maxCy); cy++) for (let cx = Math.max(0, minCx); cx <= Math.min(model.widthCells, maxCx); cx++) {
     const hit = nearest(cx * 2, cy * 2, reach);
     if (!hit) continue;
@@ -89,6 +106,11 @@ export function applySpline(model, opts) {
     if (kind === "road") {
       const w = hit.d <= half ? 1 : 1 - smoothstep((hit.d - half) / edge);
       v = h + (t - h) * w;
+    } else if (kind === "ridge") {
+      const x = cx * 2, y = cy * 2, top = t + hgt * 0.35 * bumps(x / 35, y / 35);
+      const crestAt = hit.d <= half ? top - hgt * 0.3 * (hit.d / half) ** 2 : top - hgt * 0.3;
+      const w = hit.d <= half ? 1 : 1 - smoothstep((hit.d - half) / edge);
+      v = Math.max(h, h + (crestAt - h) * w);
     } else {
       const depth = opts.depth ?? 2;
       if (hit.d <= half) v = Math.min(h, t + depth * 0.55 * (hit.d / half) ** 2);         // rounded bed
@@ -106,7 +128,15 @@ export function applySpline(model, opts) {
     const hit = nearest(hx + 0.5, hy + 0.5, reach);
     if (!hit) continue;
     const s = sAt[hit.i], jag = ragged(s, seed) * Math.min(0.9, half * 0.25);
-    if (kind === "road") {
+    if (kind === "ridge") {
+      const reachTex = half + edge * 0.55 + jag * 4;
+      if (hit.d > reachTex) continue;
+      const gx = model.at(hx + 1.5, hy + 0.5) - model.at(hx - 0.5, hy + 0.5), gy = model.at(hx + 0.5, hy + 1.5) - model.at(hx + 0.5, hy - 0.5);
+      const steep = Math.atan(Math.hypot(gx, gy) / 2) * 57.3 > 30;
+      const t = steep && opts.steepTexture !== undefined ? opts.steepTexture : opts.texture;
+      if (t !== undefined) model.setTile(hx, hy, t, keys);
+      if (opts.block && opts.attrFlags && opts.attrFlags.block && hit.d <= half + edge * 0.45) model.setAttr(hx, hy, opts.attrFlags.block, false, keys);
+    } else if (kind === "road") {
       if (hit.d <= half + jag) model.setTile(hx, hy, opts.texture, keys);
       else if (opts.edgeTexture && hit.d <= half + edge * 0.7 + jag && noise1(hx * 0.7 + hy * 1.3, seed + 3) > -0.2) model.setTile(hx, hy, opts.edgeTexture, keys);
     } else {
@@ -115,6 +145,7 @@ export function applySpline(model, opts) {
     }
   }
   if (keys.size) parts.add("tile");
+  if (kind === "ridge" && opts.block) parts.add("attr");
   if (kind === "river") {
     const depth = opts.depth ?? 2;
     const flags = opts.attrFlags || {};

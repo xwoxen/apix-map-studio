@@ -96,9 +96,9 @@ server.registerTool("mapstudio_search_library", {
 }, tool((a) => call("search_library", a)));
 
 server.registerTool("mapstudio_spline", {
-  title: "Cesta alebo rieka po krivke",
-  description: `Plynulá krivka cez body. road: terén vyrovnaný do plynulého profilu s obmedzeným stúpaním (maxGrade, m na m, predvolene 0,12), krajnica edge m, textúra jadra s nepravidelným okrajom, edgeTexture ako vyšliapaná krajnica. river: koryto, ktoré po prúde (od prvého bodu) len klesá, hĺbka depth m, svahy brehov edge m, hladina 70 % hĺbky, atribút voda, block = neprechodná (predvolene true), bedTexture dno, texture breh. Textúry: číslo mapy alebo herná cesta. Jeden krok Späť. ${POS}`,
-  inputSchema: { kind: z.enum(["road", "river"]), points: z.array(point).min(2).max(500), width: z.number().positive().optional(), edge: z.number().positive().optional(),
+  title: "Cesta, rieka alebo hrebeň po krivke",
+  description: `Plynulá krivka cez body. road: terén vyrovnaný do plynulého profilu s obmedzeným stúpaním (maxGrade, m na m, predvolene 0,12), krajnica edge m, textúra jadra s nepravidelným okrajom, edgeTexture ako vyšliapaná krajnica. river: koryto, ktoré po prúde (od prvého bodu) len klesá, hĺbka depth m, svahy brehov edge m, hladina 70 % hĺbky, atribút voda, block = neprechodná (predvolene true), bedTexture dno, texture breh. ridge: zalesnený hrebeň medzi oblasťami (švy importov, hranice zón), vrchol height m (12) nad vyššou stranou, šírka width (30), svahy edge, texture + steepTexture na svahoch nad 30°, block (predvolene true). Textúry: číslo mapy alebo herná cesta. Jeden krok Späť. ${POS}`,
+  inputSchema: { kind: z.enum(["road", "river", "ridge"]), height: z.number().positive().optional(), steepTexture: z.union([z.number(), z.string()]).optional(), points: z.array(point).min(2).max(500), width: z.number().positive().optional(), edge: z.number().positive().optional(),
     texture: z.union([z.number(), z.string()]).optional(), edgeTexture: z.union([z.number(), z.string()]).optional(), bedTexture: z.union([z.number(), z.string()]).optional(),
     depth: z.number().positive().optional(), maxGrade: z.number().positive().optional(), smooth: z.number().positive().optional(), block: z.boolean().optional(), seed: z.number().optional() }
 }, tool((a) => call("spline", a)));

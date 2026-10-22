@@ -223,6 +223,8 @@ dekódovať (`mapgen/lzo.js`) a sedí bunka po bunke s `attr.atr` – overuje `n
   a rozmazaný do okolia nepravidelným okrajom. Objekty nepoužiteľné v hre (katalóg) vynechá, upozorní na > 12 textúr na terén.
   Test: `node test/run-eval.js <prázdna 2×1 mapa> test/import-demo.js <out> --inplace` (140/140 objektov na správnom mieste a s
   otočením).
+- **Hrebeň** – `mapstudio_spline` s `kind: "ridge"`: zalesnený blokovaný val po krivke, vrchol nad vyššou stranou (skryje švy
+  importov a oddelí zóny ako na oficiálnych mapách), textúra + `steepTexture` na svahoch.
 - **Terén navrch** – `terrain_generate` s `mode: "add"` pridá reliéf alebo hory k existujúcemu terénu (bez erózie).
 - **Atlas** – `python tools/map_atlas.py <mapa> <out.png> [--attr]`: minimapa s metrovou mriežkou a blokovanými bunkami, na
   výber oblastí.
