@@ -2,6 +2,7 @@
 import * as THREE from "three";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { template } from "./objects.js";
+import { setEffectViewport, restoreEffectViewport } from "./effects.js";
 
 const SIZE = 256;
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -46,6 +47,9 @@ function isEmpty() {
 async function render(crc) {
   const { node } = await template(crc);
   const obj = cloneSkinned(node);
+  const mainScale = obj.isEffect ? setEffectViewport(SIZE, camera.fov) : null;
+  if (obj.isEffect) { await obj.ready; obj.warm(1.5); }   // textures, then let the particles fill in
+  if (obj.isEffect) obj.traverse((o) => { if (o.userData.effectMarker) o.visible = false; });
   scene.add(obj);
   obj.updateMatrixWorld(true);
   await texturesReady(obj);
@@ -59,6 +63,7 @@ async function render(crc) {
   camera.lookAt(center);
   renderer.render(scene, camera);
   scene.remove(obj);
+  if (obj.isEffect) { obj.dispose(); restoreEffectViewport(mainScale); }
   if (isEmpty()) return null;                 // nothing visible: don't cache a blank picture
   return window.studio.saveThumb(crc, renderer.domElement.toDataURL("image/png"));
 }

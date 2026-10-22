@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { DDSLoader } from "three/addons/loaders/DDSLoader.js";
+import { loadEffect } from "./effects.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 const templates = new Map();     // crc -> Promise<{ node, info }>
@@ -179,6 +180,10 @@ export function template(crc) {
       } catch (e) {
         return { node: placeholder(0xd04040, 3, 3), info: { ...info, kind: "error", error: String(e) } };
       }
+    }
+    if (info.kind === "effect") {
+      try { return { node: await loadEffect(info.url, info.dir), info }; }
+      catch (e) { return { node: placeholder(0xe0b040, 1, 1), info: { ...info, kind: "marker", error: String(e) } }; }
     }
     if (info.kind === "marker") return { node: placeholder(0xe0b040, 1, 1), info };
     return { node: placeholder(0xd040d0, 2, 2), info };

@@ -8,6 +8,7 @@ import { thumbnail } from "./thumbs.js";
 import { Environment } from "./env.js";
 import { Walker, CLASSES } from "./walker.js";
 import { SpawnLayer, SPAWN_TYPES } from "./spawns.js";
+import { updateEffects, setEffectViewport } from "./effects.js";
 
 const $ = (id) => document.getElementById(id);
 const deg = THREE.MathUtils.radToDeg, rad = THREE.MathUtils.degToRad;
@@ -48,6 +49,7 @@ function resize() {
   renderer.setSize(r.width, r.height, false);
   camera.aspect = r.width / Math.max(1, r.height);
   camera.updateProjectionMatrix();
+  setEffectViewport(r.height, camera.fov);
 }
 new ResizeObserver(resize).observe(viewport);
 
@@ -1622,6 +1624,7 @@ renderer.setAnimationLoop(() => {
   const dt = Math.min(0.1, moveClock.getDelta());
   if (walker.active) walker.update(dt); else { walker.update(dt); fly.update(dt, shiftHeld); }
   if (spawnLayer.root.visible) spawnLayer.update(dt);
+  updateEffects(dt);
   environment.follow(camera);
   renderer.render(scene, camera);
 });

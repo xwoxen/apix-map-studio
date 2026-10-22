@@ -235,11 +235,24 @@ async function recoverTextures(fbx, modelFile, out) {
 /* ---------- thumbnails ---------- */
 
 const THUMBS = path.join(app.getPath("userData"), "thumbs");
+// effects used to get a yellow box as thumbnail; drop those once so they render as particles
+function refreshEffectThumbs() {
+  const flag = path.join(THUMBS, ".effects-v3");
+  if (fs.existsSync(flag)) return;
+  for (const p of getLibrary().values()) if (/^effect$/i.test(p.type)) fs.rmSync(path.join(THUMBS, `${p.crc >>> 0}.png`), { force: true });
+  fs.mkdirSync(THUMBS, { recursive: true });
+  fs.writeFileSync(flag, "");
+}
 function thumbFile(crc) { return path.join(THUMBS, `${crc >>> 0}.png`); }
 function modelFor(crc) {
   const p = getLibrary().get(crc >>> 0);
   if (!p) return Promise.resolve({ kind: "unknown" });
   if (/^tree$/i.test(p.type)) return Promise.resolve(treeInfo(p));
+  if (/\.mse$/i.test(p.model)) {
+    // background effect: the renderer reads the .mse and loads its textures next to it
+    const mse = resolveAsset(p.model);
+    return Promise.resolve(mse ? { kind: "effect", url: assetUrl(mse), dir: p.model.replace(/\\/g, "/").replace(/\/[^/]*$/, ""), name: p.name } : { kind: "marker", type: p.type, name: p.name });
+  }
   if (!/\.gr2$/i.test(p.model)) return Promise.resolve({ kind: "marker", type: p.type, name: p.name });
   const out = path.join(CACHE, String(crc));
   const fbx = path.join(out, "m.fbx");
@@ -482,11 +495,11 @@ function writeExport(dir, files) {
   }
   return { folder: path.join(dir, "_export", "atlas"), files: written, backup: fs.existsSync(backup) ? backup : null, preview };
 }
-// Properties whose GR2 model is not in the client (the main Property pack lists zones the client doesn't ship)
+// Properties whose GR2 model or effect script is not in the client (the main Property pack lists zones the client doesn't ship)
 // stay in the library for the map check but are left out of the list; their old placeholder thumbnails go.
 function modelAvailable(p) {
   if (p.available === undefined) {
-    p.available = !/\.gr2$/i.test(p.model) || Boolean(resolveAsset(p.model));
+    p.available = !/\.(gr2|mse)$/i.test(p.model) || Boolean(resolveAsset(p.model));
     if (!p.available) fs.rmSync(thumbFile(p.crc), { force: true });
   }
   return p.available;
@@ -504,7 +517,7 @@ ipcMain.handle("game:export", (_, dir, opts) => {
   const m = exportGame(dir, { ...opts, out, editorRoot: path.dirname(dir) });
   return { out, files: m.files.length, index: m.index, base: m.basePosition, town: m.town, shadows: m.shadows, spawns: m.spawns, serverAttr: m.serverAttr, deploy: m.deploy };
 });
-ipcMain.handle("thumb:get", (_, crc) => (fs.existsSync(thumbFile(crc)) ? assetUrl(thumbFile(crc)) : null));
+ipcMain.handle("thumb:get", (_, crc) => { refreshEffectThumbs(); return fs.existsSync(thumbFile(crc)) ? assetUrl(thumbFile(crc)) : null; });
 ipcMain.handle("thumb:save", (_, crc, dataUrl) => {
   const png = Buffer.from(String(dataUrl).replace(/^data:image\/png;base64,/, ""), "base64");
   fs.mkdirSync(THUMBS, { recursive: true });
