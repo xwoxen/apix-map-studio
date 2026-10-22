@@ -234,6 +234,23 @@ dekódovať (`mapgen/lzo.js`) a sedí bunka po bunke s `attr.atr` – overuje `n
 - **Prefaby z máp** – `node tools/mine-prefabs.js a1=<dir> …`: nájde skupiny (budova s rekvizitami, skaly, háje) a uloží ich ako
   prefaby `src_<mapa>_<typ>_NN`.
 
+### Nástroje dizajnéra (fáza 9)
+
+Z ručnej práce na mape Priesmyk Bieleho vlka (`_exports/apix_farm_02/tools/build.js` ich teraz používa):
+- **Kladenie objektov** – `add_objects` položka `ground: "min"` (päta na najnižšom bode pod pôdorysom, nič nevisí na svahu), `sink` / `lift` m,
+  `face: [x, y]` otočí prednú stranu k bodu (front = juh pri yaw 0, yaw 90 = východ).
+- **Priechodnosť** – `mapstudio_reachability` (`renderer/reach.js`): kam dôjde hráč pešo z Townu, oddelené plochy, nedosiahnuteľné spawny,
+  `png: true` uloží mapu priechodnosti.
+- **Plánovač spawnov** – `mapstudio_plan_spawns` (`renderer/spawnplan.js`): metiny a skupiny po zónach na rovných, voľných, dosiahnuteľných
+  miestach mimo ciest a rezervovaných plôch, s rozostupmi; `apply: true` ich pridá.
+- **Les na okraji údolí** – `mapstudio_forest_edge` (`renderer/forestedge.js`): súvislá stena stromov okolo priechodných údolí, skalné výchozy,
+  holé blokované svahy doplnené, hranica lesa.
+- **Hárok assetov** – `node tools/asset-sheet.js <out.png> <meno> … [--ground snow]`: vykreslí objekty na prázdnej testovacej mape do jedného
+  obrázka s menami a rozmermi (napr. zistí, že `treewhitepinesnow` je zelený).
+- **Kontrola mapy** – nové varovania: rozpočet objektov na terén (> 450), objekty nepoužiteľné v hre, spawny nedosiahnuteľné z Townu;
+  efekty sa už nehlásia ako visiace.
+- Testy v `test/gen.js`, ukážka `test/phase9-demo.js`.
+
 ## Ďalšie fázy
 
 2. ~~Štetce terénu (výška, textúry, voda, atribúty).~~ Hotové.

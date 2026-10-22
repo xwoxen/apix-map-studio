@@ -175,8 +175,46 @@ server.registerTool("mapstudio_catalog", {
 server.registerTool("mapstudio_add_objects", {
   title: "Pridať objekty",
   description: `Pridá objekty podľa crc alebo názvu z knižnice. Bez z sa položia na terén. ${POS}`,
-  inputSchema: { items: z.array(z.object({ crc: z.number().optional(), name: z.string().optional(), x: z.number(), y: z.number(), z: z.number().optional(), yaw: z.number().optional() })).min(1).max(2000) }
+  inputSchema: { items: z.array(z.object({ crc: z.number().optional(), name: z.string().optional(), x: z.number(), y: z.number(), z: z.number().optional(), yaw: z.number().optional(),
+    face: point.optional().describe("otočí prednú stranu (pri yaw 0 na juh) k bodu [x, y]"), ground: z.enum(["center", "min"]).optional().describe("min = päta na najnižšom bode pod pôdorysom (svah)"),
+    sink: z.number().optional().describe("zapustenie do terénu v m"), lift: z.number().optional().describe("zdvihnutie nad terén v m") })).min(1).max(2000) }
 }, tool((a) => call("add_objects", a)));
+
+const zoneSchema = z.object({ name: z.string().optional(), circles: z.array(z.tuple([z.number(), z.number(), z.number()])).optional(), box: box.optional(),
+  metins: z.array(z.number().int()).optional(), groups: z.array(z.number().int()).optional(), groupType: z.enum(["g", "ga", "m", "ma"]).optional(),
+  metinRespawn: z.number().optional(), groupRespawn: z.number().optional(), groupRadius: z.number().optional() });
+const avoidSchema = z.array(z.object({ x: z.number(), y: z.number(), r: z.number() }));
+const linesSchema = z.array(z.object({ points: z.array(point).min(2), radius: z.number() }));
+
+server.registerTool("mapstudio_reachability", {
+  title: "Priechodnosť z Townu",
+  description: `Kam dôjde hráč pešo z Townu (alebo from [x,y]) po atribútoch (bez block a vody): dosiahnuteľná a priechodná plocha v ha, oddelené plochy,
+spawny, ku ktorým sa nedá dôjsť. png=true uloží obrázok (zelená = dosiahnuteľné, sivá = priechodné inde, červená = blok, modrá = voda, žltá = objekty) a vráti cestu. ${POS}`,
+  inputSchema: { from: point.optional(), png: z.boolean().optional() }
+}, tool((a) => call("reachability", a)));
+
+server.registerTool("mapstudio_plan_spawns", {
+  title: "Naplánovať metiny a skupiny",
+  description: `Rozmiestni metiny a skupiny monštier po zónach: rovné miesto (rozdiel výšok v kruhu probe m ≤ metinRough 3,5 / groupRough 5), dosiahnuteľné z Townu, bez objektov
+do metinClear m (6), mimo avoid a avoidLines (cesty), rozostupy metinSpacing (30) / groupSpacing (22). Metiny dostanú najrovnejšie miesta. Zóna: circles [[x,y,r]] alebo box,
+metins [vnum], groups [vnum], groupType, respawny. apply=true ich pridá (inak len návrh). ${POS}`,
+  inputSchema: { zones: z.array(zoneSchema).min(1), from: point.optional(), avoid: avoidSchema.optional(), avoidLines: linesSchema.optional(), metinSpacing: z.number().optional(),
+    groupSpacing: z.number().optional(), metinClear: z.number().optional(), metinRough: z.number().optional(), groupRough: z.number().optional(), probe: z.number().optional(),
+    step: z.number().optional(), seed: z.number().optional(), apply: z.boolean().optional() }
+}, tool((a) => call("plan_spawns", a)));
+
+server.registerTool("mapstudio_forest_edge", {
+  title: "Les na okraji údolí",
+  description: `Ako oficiálne mapy: súvislá stena stromov na blokovanej zemi pozdĺž priechodných údolí (edge { from 0,5, to 16 m od priechodnej zeme, chance 0,7, spacing 5,5 }),
+skalné výchozy na strmých miestach okraja (rocks, rockChance 0,05), holé blokované svahy doplnené tam, kde do fill.radius (15) m nie je strom (fill { chance 0,4, spacing 7 } alebo false),
+hranica lesa maxHeight m, maxSlope (50°). items = stromy [{crc|name, weight}]. Jeden krok Späť, dryRun = len štatistika. ${POS}`,
+  inputSchema: { items: z.array(z.object({ crc: z.number().optional(), name: z.string().optional(), weight: z.number().optional() })).min(1),
+    rocks: z.array(z.object({ crc: z.number().optional(), name: z.string().optional() })).optional(), area: box.optional(),
+    edge: z.object({ from: z.number().optional(), to: z.number().optional(), chance: z.number().optional(), spacing: z.number().optional() }).optional(),
+    fill: z.union([z.literal(false), z.object({ radius: z.number().optional(), chance: z.number().optional(), spacing: z.number().optional() })]).optional(),
+    rockChance: z.number().optional(), maxHeight: z.number().optional(), maxSlope: z.number().optional(), avoid: avoidSchema.optional(), avoidLines: linesSchema.optional(),
+    sink: z.number().optional(), step: z.number().optional(), seed: z.number().optional(), dryRun: z.boolean().optional() }
+}, tool((a) => call("forest_edge", a)));
 
 server.registerTool("mapstudio_update_objects", {
   title: "Upraviť objekty",

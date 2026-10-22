@@ -4,6 +4,9 @@ import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { TerrainModel, TerrainView } from "./terrain.js";
 import { TOOLS, paint, sample, attrMask, BrushCursor } from "./brush.js";
 import { applySpline } from "./spline.js";
+import { reachable, patches } from "./reach.js";
+import { planSpawns } from "./spawnplan.js";
+import { forestEdge } from "./forestedge.js";
 import { generateTerrain } from "./terraingen.js";
 import { autoTexture } from "./autotexture.js";
 import { scatter } from "./scatter.js";
@@ -1227,6 +1230,14 @@ function describe(o) {
   return { id: o.id, crc: o.crc, name: info ? info.name : null, type: info ? info.type : null,
     x: +p.x.toFixed(2), y: +p.z.toFixed(2), z: +p.y.toFixed(2), yaw: +o.yaw.toFixed(1), ground: +heights.at(p.x, p.z).toFixed(2) };
 }
+// ground under an object: "min" = lowest point under its footprint (nothing floats on a slope), else the centre
+function groundFor(crc, x, y, mode) {
+  let z = heights.at(x, y);
+  if (mode !== "min") return z;
+  const s = (libByCrc.get(crc) || {}).size, r = s ? Math.max(s[0], s[1]) * 0.4 : 0;
+  for (const [dx, dy] of [[r, 0], [-r, 0], [0, r], [0, -r], [r * 0.7, r * 0.7], [-r * 0.7, r * 0.7], [r * 0.7, -r * 0.7], [-r * 0.7, -r * 0.7]]) z = Math.min(z, heights.at(x + dx, y + dy));
+  return z;
+}
 function findCrc(item) {
   if (item.crc !== undefined) return Number(item.crc) >>> 0;
   const q = String(item.name || "").toLowerCase();
@@ -1372,6 +1383,7 @@ async function checkMap() {
   const trees = new Set(infos.filter(([, i]) => i.kind === "tree").map(([c]) => c));
   const floating = [], buried = [], wet = [];
   for (const o of objects) {
+    if ((libByCrc.get(o.crc) || {}).type === "Effect") continue;              // fire over a brazier, mist in a gorge: placed in the air on purpose
     const p = toScene(o), g = heights.at(p.x, p.z), d = p.y - g;
     if (d > 1.5) floating.push(o.id);
     if (d < -1.5 && !trees.has(o.crc)) buried.push(o.id);
@@ -1409,6 +1421,16 @@ async function checkMap() {
   if (onBlock.length) add("warning", "spawn_blocked", `${onBlock.length} spawnov má stred na blokovanej bunke alebo vo vode (server ich nespawne).`);
   if (npcPvp.length) add("warning", "npc_pvp", `${npcPvp.length} NPC stojí v PvP zóne.`);
   if (nearTown.length) add("warning", "spawn_near_town", `${nearTown.length} spawnov monštier je do 10 m od Townu.`);
+  // object budget per 256 m terrain (official maps: 30-250; the client draws every object in view) and game usability
+  const perTerrain = new Map();
+  for (const o of objects) { const p = toScene(o), k = `${String(Math.floor(p.x / 256)).padStart(3, "0")}${String(Math.floor(p.z / 256)).padStart(3, "0")}`; perTerrain.set(k, (perTerrain.get(k) || 0) + 1); }
+  for (const [k, n] of perTerrain) if (n > 450) add("warning", "object_budget", `Terén ${k} má ${n} objektov (oficiálne mapy 30–250); pri slabšom PC môže klient sekať.`);
+  const unusable = objects.filter((o) => { const p = libByCrc.get(o.crc); return p && p.usable === false && !p.usableAfterPacking; });
+  if (unusable.length) add("warning", "unusable", `${unusable.length} objektov hra nezobrazí (katalóg: ${[...new Set(unusable.map((o) => libByCrc.get(o.crc).name))].slice(0, 5).join(", ")}).`, unusable.map((o) => o.id));
+  if (town && !(flagsAt(town.x, town.y) & 3)) {
+    const R = reachable(heights, town), lost = spawns.filter((sp) => !R.at(sp.x, sp.y));
+    if (lost.length) add("warning", "spawn_unreachable", `${lost.length} spawnov sa nedá z Townu dosiahnuť pešo (oddelená plocha).`);
+  }
   if (dirty || spawnsDirty || heights.isDirty) add("info", "unsaved", "Mapa má neuložené zmeny.");
   return { ok: !issues.some((i) => i.level === "error"), objects: objects.length, issues };
 }
@@ -1515,8 +1537,10 @@ const API = {
     change(() => {
       for (const it of items) {
         const crc = findCrc(it);
-        const zM = it.z !== undefined ? it.z : heights.at(it.x, it.y);
-        const o = { id: nextId++, crc, ...fromScene(new THREE.Vector3(it.x, zM, it.y)), yaw: ((it.yaw || 0) % 360 + 360) % 360, pitch: 0, roll: 0, bias: 0 };
+        const zM = it.z !== undefined ? it.z : groundFor(crc, it.x, it.y, it.ground) + (it.lift || 0) - (it.sink || 0);
+        // face: [x, y] turns the front (local +z, south at yaw 0) towards that point
+        const yaw = it.face ? (Math.atan2(it.face[0] - it.x, it.face[1] - it.y) * 180) / Math.PI : it.yaw || 0;
+        const o = { id: nextId++, crc, ...fromScene(new THREE.Vector3(it.x, zM, it.y)), yaw: (Math.round(yaw * 100) / 100 % 360 + 360) % 360, pitch: 0, roll: 0, bias: 0 };
         objects.push(o); added.push(o);
       }
     });
@@ -1661,6 +1685,57 @@ const API = {
       }
     });
     return { stats: res.stats, count: added.length, ids: added.map((o) => o.id) };
+  },
+  // what a player reaches on foot from the town (or from): area, walkable patches, spawns that cannot be reached;
+  // png: true adds a picture (green reached, grey walkable elsewhere, red blocked, blue water, yellow objects)
+  reachability({ from, png = false } = {}) {
+    requireMap();
+    const start = from ? { x: from[0], y: from[1] } : town;
+    if (!start) throw new Error("from [x, y] alebo nastavený Town je povinný");
+    const R = reachable(heights, start), sizes = patches(heights);
+    const out = { from: [start.x, start.y], reachableHa: +(R.count / 10000).toFixed(2), walkableHa: +(R.walkable / 10000).toFixed(2),
+      patchesHa: sizes.slice(0, 6).map((n) => +(n / 10000).toFixed(2)), patchCount: sizes.length,
+      unreachableSpawns: spawns.filter((sp) => !R.at || !R.at(sp.x, sp.y)).map((sp) => ({ id: sp.id, type: sp.type, vnum: sp.vnum, x: sp.x, y: sp.y })) };
+    if (png) {
+      const c = document.createElement("canvas"); c.width = R.W; c.height = R.H;
+      const ctx = c.getContext("2d"), img = ctx.createImageData(R.W, R.H);
+      for (let y = 0; y < R.H; y++) for (let x = 0; x < R.W; x++) {
+        const k = y * R.W + x, a = heights.attr(x, y), col = R.seen[k] ? [60, 170, 60] : a & 2 ? [40, 80, 200] : a & 1 ? [150, 40, 40] : [140, 140, 140];
+        img.data.set([...col, 255], k * 4);
+      }
+      for (const o of objects) { const p = toScene(o), k = (Math.floor(p.z) * R.W + Math.floor(p.x)) * 4; if (k >= 0 && k < img.data.length) img.data.set([255, 230, 0, 255], k); }
+      ctx.putImageData(img, 0, 0);
+      out.png = c.toDataURL("image/png");
+    }
+    return out;
+  },
+  // metins and monster groups per zone on flat, reachable, free ground (see renderer/spawnplan.js); apply: true adds them
+  async plan_spawns({ zones, from, avoid, avoidLines, metinSpacing, groupSpacing, metinClear, metinRough, groupRough, probe, step, seed, apply = false } = {}) {
+    requireMap();
+    const start = from ? { x: from[0], y: from[1] } : town;
+    if (!start) throw new Error("from [x, y] alebo nastavený Town je povinný");
+    const R = reachable(heights, start);
+    const objs = objects.map((o) => { const p = toScene(o); return { x: p.x, y: p.z }; });
+    const res = planSpawns(heights, R.at || (() => false), objs, { zones, avoid, avoidLines, metinSpacing, groupSpacing, metinClear, metinRough, groupRough, probe, step, seed });
+    let added = [];
+    if (apply && res.items.length) added = (await API.add_spawns({ items: res.items })).added;
+    return { stats: res.stats, items: res.items, added };
+  },
+  // forest wall along the walkable valleys + bare blocked slopes filled (see renderer/forestedge.js); one undo step
+  forest_edge({ items, rocks, area, edge, fill, rockChance, maxHeight, maxSlope, avoid, avoidLines, sink, step, seed, dryRun = false } = {}) {
+    requireMap();
+    const existing = objects.map((o) => { const p = toScene(o); return { x: p.x, y: p.z }; });
+    const res = forestEdge(heights, existing, { items: (items || []).map((it) => ({ crc: findCrc(it), weight: it.weight ?? 1 })), rocks: (rocks || []).map((it) => ({ crc: findCrc(it) })),
+      area, edge, fill, rockChance, maxHeight, maxSlope, avoid, avoidLines, sink, step, seed });
+    if (dryRun) return { stats: res.stats, count: res.items.length };
+    const added = [];
+    change(() => {
+      for (const it of res.items) {
+        const o = { id: nextId++, crc: it.crc, ...fromScene(new THREE.Vector3(it.x, it.z, it.y)), yaw: it.yaw, pitch: 0, roll: 0, bias: 0 };
+        objects.push(o); added.push(o);
+      }
+    });
+    return { stats: res.stats, count: added.length };
   },
   list_sources: async ({ query = "" } = {}) => (await window.studio.sources()).filter((m) => (m.name + " " + m.dir).toLowerCase().includes(query.toLowerCase())),
   // copy a rectangle of another map into this one (one undo step); objects not usable in game are skipped by default

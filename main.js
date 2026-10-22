@@ -594,6 +594,14 @@ async function bridgeCall(method, params) {
     fs.writeFileSync(file, Buffer.from(r.png.replace(/^data:image\/png;base64,/, ""), "base64"));
     return { file, width: r.width, height: r.height };
   }
+  if (method === "reachability" && params && params.png) {
+    const r = await callRenderer("reachability", params);
+    fs.mkdirSync(SHOTS, { recursive: true });
+    const file = path.join(SHOTS, `reach-${Date.now()}.png`);
+    fs.writeFileSync(file, Buffer.from(r.png.replace(/^data:image\/png;base64,/, ""), "base64"));
+    delete r.png;
+    return { ...r, file };
+  }
   if (method === "window_screenshot") {
     fs.mkdirSync(SHOTS, { recursive: true });
     const file = path.join(SHOTS, `window-${Date.now()}.png`);
