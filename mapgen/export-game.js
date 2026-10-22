@@ -19,7 +19,7 @@ const { objectCells } = require("./collision");
 const { litLevels, shadowRaw, shadowDds } = require("./shadow");
 const { readSpawns, readSpawnFile, regenRows } = require("./spawns");
 const { readIndex, readRects } = require("./game-slots");
-const { parseAreaData } = require("../maplib");
+const { parseAreaData, formatAreaData, isLegacyStudioMap } = require("../maplib");
 
 const TERRAIN = 25600;                 // world units per terrain (CellScale 200 × 128 cells)
 const SECTOR = 6400, CELL = 50;        // server sectree and attribute cell
@@ -43,7 +43,7 @@ function readObjects(dir, size) {
   const out = [];
   for (let ty = 0; ty < size[1]; ty++) for (let tx = 0; tx < size[0]; tx++) {
     const f = findFile(path.join(dir, `${String(tx).padStart(3, "0")}${String(ty).padStart(3, "0")}`), "AreaData.txt");
-    if (f) out.push(...parseAreaData(fs.readFileSync(f, "latin1")));
+    if (f) out.push(...parseAreaData(fs.readFileSync(f, "latin1"), undefined, isLegacyStudioMap(dir)));
   }
   return out;
 }
@@ -165,7 +165,8 @@ function exportGame(mapDir, { index, base, out, town, gotoAlias, editorRoot, obj
     for (const f of CLIENT_TERRAIN_FILES) {
       const src = findFile(t, f);
       if (!src) throw new Error(`missing ${key}/${f}${f === "minimap.dds" ? " (run Export in Map Studio first)" : ""}`);
-      put(`${pack}/${name}/${key}/${f}`, fs.readFileSync(src));
+      // AreaData always goes out in the client's rotation order (maps from older Studio versions are converted here)
+      put(`${pack}/${name}/${key}/${f}`, f === "areadata.txt" ? Buffer.from(formatAreaData(parseAreaData(fs.readFileSync(src, "latin1"), key, isLegacyStudioMap(mapDir))), "latin1") : fs.readFileSync(src));
     }
     // shadows baked by Map Studio's Export (sun of the map's environment), otherwise a fully lit terrain
     const raw = findFile(t, "shadowmap.raw"), dds = findFile(t, "shadowmap.dds");

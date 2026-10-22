@@ -5,10 +5,11 @@ const path = require("path");
 const assert = require("assert");
 const { parseAreaData, saveObjects } = require("../maplib");
 
-const source = process.argv[2] || "C:/Users/micha/Documents/we_remix_v59__20260716-1745/apix_demo_ostrov";
+// an official client map (WorldEditor format, whole-degree rotations, some objects tilted)
+const source = process.argv[2] || "C:/Users/micha/Documents/APIX/apix-client/bin/pack/OutdoorA1/metin2_map_a1";
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "mapstudio-"));
 fs.mkdirSync(path.join(tmp, "000000"));
-const original = fs.readFileSync(path.join(source, "000000", "AreaData.txt"), "latin1");
+const original = fs.readFileSync(path.join(source, "002002", "areadata.txt"), "latin1");
 fs.writeFileSync(path.join(tmp, "000000", "AreaData.txt"), original, "latin1");
 
 const objects = parseAreaData(original, "000000");
@@ -18,6 +19,33 @@ const written = fs.readFileSync(path.join(tmp, "000000", "AreaData.txt"), "latin
 assert.strictEqual(written, original, "AreaData round trip changed the file");
 assert.ok(fs.existsSync(path.join(result.backup, "000000", "AreaData.txt")), "backup missing");
 console.log(`ok: ${objects.length} objects, identical after round trip`);
+
+// rotation: the vertical turn is the third number (client roll); the first two are tilts and survive the round trip
+{
+  const { formatAreaData, isLegacyStudioMap, ROTATION_MARKER } = require("../maplib");
+  const one = (rot) => `Start Object000
+    1.0 -2.0 3.0
+    5
+    ${rot}
+    0.0
+End Object
+`;
+  const [o] = parseAreaData(one("0.000000#0.000000#30.000000"), "k");
+  assert.deepStrictEqual([o.yaw, o.pitch, o.roll], [30, 0, 0], "official: third number is the vertical turn");
+  const [t] = parseAreaData(one("12.000000#5.000000#270.000000"), "k");
+  assert.ok(formatAreaData([t]).includes("12.000000#5.000000#270.000000"), "tilts kept in place");
+  const [l] = parseAreaData(one("45.000000#0.000000#0.000000"), "k", true);
+  assert.strictEqual(l.yaw, 45, "legacy Studio map: first number was the vertical turn");
+  assert.ok(formatAreaData([l]).includes("0.000000#0.000000#45.000000"), "saved in client order");
+  assert.ok(formatAreaData([{ x: 0, y: 0, z: 0, crc: 1, yaw: -90.6, pitch: 0, roll: 0, bias: 0 }]).includes("0.000000#0.000000#269.000000"), "whole degrees 0..359");
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "mapstudio-rot-"));
+  fs.mkdirSync(path.join(d, "_studio_backup"));
+  assert.ok(isLegacyStudioMap(d), "older Studio save is legacy");
+  fs.writeFileSync(path.join(d, ROTATION_MARKER), "");
+  assert.ok(!isLegacyStudioMap(d), "marker ends legacy");
+  fs.rmSync(d, { recursive: true, force: true });
+  console.log("ok: rotation order (client yaw#pitch#roll, vertical = third), legacy maps converted");
+}
 fs.rmSync(tmp, { recursive: true, force: true });
 
 // AreaAmbienceData.txt (sound ambience with range) must also survive a round trip byte for byte

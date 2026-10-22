@@ -1,7 +1,7 @@
 // Read-only loader for whole maps (client pack folders or WorldEditor maps) and rectangular regions of them.
 // Used by the map analysis tool, region import (Map Studio) and prefab mining. Plain Node.
 const fs = require("fs"), path = require("path");
-const { parseAreaData, parseTextureSet, decodeAttr, decodeWater } = require("./maplib");
+const { parseAreaData, parseTextureSet, decodeAttr, decodeWater, isLegacyStudioMap } = require("./maplib");
 const { PACK_ROOT, EDITOR_ROOT } = require("./assets");
 
 const findCi = (dir, file) => { try { return fs.readdirSync(dir).find((f) => f.toLowerCase() === file.toLowerCase()) || null; } catch { return null; } };
@@ -32,7 +32,7 @@ function loadMap(dir) {
     if (!sub) continue;
     const td = path.join(dir, sub);
     const ad = readCi(td, "areadata.txt");
-    if (ad) for (const o of parseAreaData(ad.toString("latin1"), k)) objects.push({ x: o.x / 100, y: -o.y / 100, z: o.z / 100, crc: o.crc >>> 0, yaw: o.yaw });
+    if (ad) for (const o of parseAreaData(ad.toString("latin1"), k, isLegacyStudioMap(dir))) objects.push({ x: o.x / 100, y: -o.y / 100, z: o.z / 100, crc: o.crc >>> 0, yaw: o.yaw });
     const hr = readCi(td, "height.raw");
     if (hr) for (let j = 0; j <= 128; j++) for (let i = 0; i <= 128; i++) {
       const gx = tx * 128 + i, gy = ty * 128 + j;

@@ -7,12 +7,27 @@ const TERRAIN_CM = 25600;        // 128 cells x 200 cm
 
 function terrainKey(tx, ty) { return String(tx).padStart(3, "0") + String(ty).padStart(3, "0"); }
 
-function parseAreaData(text, key) {
+// Rotation "a#b#c" is what the client feeds to D3DXMatrixRotationYawPitchRoll in Metin2 space (z up), whole degrees
+// (GameLib/Area.cpp reads it with atoi): the turn about the vertical axis is the THIRD number (the client's "roll"),
+// the first two tilt the model. Map Studio's o.yaw is that vertical turn (same direction as three.js rotation.y);
+// o.roll / o.pitch keep the first / second number for the round trip.
+// Map Studio before 2026-10-23 wrote its yaw into the FIRST number. Such maps (saved by Studio or made by mapgen, without
+// the rotation marker) are read with legacy = true: first number = vertical turn. Saving writes the client order + marker.
+const ROTATION_MARKER = ".rotation-v2";
+const ROTATION_NOTE = "AreaData rotation in client order (tilt#tilt#vertical turn), see maplib.js" + CRLF;
+function isLegacyStudioMap(dir) {
+  if (fs.existsSync(path.join(dir, ROTATION_MARKER))) return false;
+  return fs.existsSync(path.join(dir, "_studio_backup")) || fs.existsSync(path.join(dir, ".mapgen"));
+}
+
+function parseAreaData(text, key, legacy = false) {
   const objects = [];
   const re = /Start Object\d+\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\S+)#(\S+)#(\S+)\s+(\S+)\s+End Object/g;
   let m;
   while ((m = re.exec(text))) {
-    objects.push({ x: +m[1], y: +m[2], z: +m[3], crc: Number(m[4]) >>> 0, yaw: +m[5], pitch: +m[6], roll: +m[7], bias: +m[8], terrain: key });
+    const [a, b, c] = [+m[5], +m[6], +m[7]];
+    const rot = legacy ? { yaw: a + c, pitch: b, roll: 0 } : { yaw: c, pitch: b, roll: a };
+    objects.push({ x: +m[1], y: +m[2], z: +m[3], crc: Number(m[4]) >>> 0, ...rot, bias: +m[8], terrain: key });
   }
   return objects;
 }
@@ -42,11 +57,17 @@ function formatAmbienceData(list) {
   return lines.join(CRLF) + CRLF;
 }
 
+// client order: tilt#tilt#vertical turn, whole degrees in 0..359 (the client truncates with atoi)
+function rotation(o) {
+  const deg = (v) => fixed((((Math.round(Number(v) || 0)) % 360) + 360) % 360);
+  return `${deg(o.roll)}#${deg(o.pitch)}#${deg(o.yaw)}`;
+}
+
 function formatAreaData(list) {
   const lines = ["AreaDataFile", ""];
   list.forEach((o, i) => {
     lines.push(`Start Object${String(i).padStart(3, "0")}`, `    ${fixed(o.x)} ${fixed(o.y)} ${fixed(o.z)}`, `    ${o.crc >>> 0}`,
-      `    ${fixed(o.yaw)}#${fixed(o.pitch || 0)}#${fixed(o.roll || 0)}`, `    ${fixed(o.bias || 0)}`, "End Object");
+      `    ${rotation(o)}`, `    ${fixed(o.bias || 0)}`, "End Object");
   });
   lines.push("", `ObjectCount ${list.length}`);          // WorldEditor ignores objects without this trailer
   return lines.join(CRLF) + CRLF;
@@ -54,6 +75,7 @@ function formatAreaData(list) {
 
 // Objects go to the terrain under them; every terrain folder gets a fresh AreaData.txt, old files are backed up first.
 function saveObjects(dir, size, objects) {
+  fs.writeFileSync(path.join(dir, ROTATION_MARKER), ROTATION_NOTE);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const backup = path.join(dir, "_studio_backup", stamp);
   const groups = new Map();
@@ -177,6 +199,6 @@ function saveTerrain(dir, payload) {
 }
 
 module.exports = {
-  terrainKey, parseAreaData, formatAreaData, parseAmbienceData, formatAmbienceData, saveObjects,
+  terrainKey, parseAreaData, formatAreaData, isLegacyStudioMap, ROTATION_MARKER, ROTATION_NOTE, parseAmbienceData, formatAmbienceData, saveObjects,
   parseTextureSet, formatTextureSet, textureBlock, decodeWater, encodeWater, decodeAttr, encodeAttr, saveTerrain
 };

@@ -86,4 +86,12 @@ const assert = require("assert");
   const edgeTrees = FE.items.filter((t) => t.kind === "edge");
   assert(edgeTrees.every((t) => DT.at(t.x, t.y) <= 12.5), "edge trees within the band");
   console.log("ok: forest edge", JSON.stringify(FE.stats));
+  // object rotation as the client applies it: third number = turn about the vertical axis, first two tilt
+  const THREE = await import("three");
+  const { clientRotation } = await import("../renderer/rotation.js");
+  const e = new THREE.Euler().setFromQuaternion(clientRotation({ yaw: 30 }), "YXZ");
+  assert(Math.abs(THREE.MathUtils.radToDeg(e.y) - 30) < 1e-6 && Math.abs(e.x) < 1e-9 && Math.abs(e.z) < 1e-9, "vertical turn = rotation.y");
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(clientRotation({ roll: 90 }));
+  assert(Math.abs(up.y) < 1e-9 && Math.abs(Math.abs(up.x) - 1) < 1e-9, "first number tilts the model over");
+  console.log("ok: client rotation");
 })().catch((e) => { console.error(e); process.exit(1); });

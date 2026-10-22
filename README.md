@@ -141,6 +141,11 @@ Testy: `test/walk-demo.js`, `test/walk-objects-demo.js` na mape `apix_pvp_arena`
 
 ## Súradnice
 
+Rotácia objektu v `AreaData.txt` je `a#b#c` = yaw#pitch#roll klienta (`GameLib/Area.cpp`, `D3DXMatrixRotationYawPitchRoll` v priestore Metin2 so Z hore,
+celé stupne cez `atoi`): **otočenie okolo zvislej osi je tretie číslo**, prvé dve model nakláňajú. Studio ho ukazuje ako `yaw`, naklonenia
+vykresľuje ako klient a ukladá v poradí klienta. Mapy uložené Studiom pred 2026-10-23 (`_studio_backup` alebo `.mapgen` bez `.rotation-v2`)
+mali yaw v prvom čísle; Studio ich číta po starom, pri uložení prepíše na nové poradie a export do hry ich vždy prevedie.
+
 Scéna je v metroch, os Y hore: `scéna = (x/100, z/100, −y/100)` z Metin2 cm (y v AreaData je záporné).
 Terén: bunka × 2 m, výška = surová hodnota / 200. Formáty súborov: `mapgen/README.md`.
 

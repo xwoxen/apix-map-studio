@@ -6,12 +6,14 @@ import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { DDSLoader } from "three/addons/loaders/DDSLoader.js";
 import { loadEffect } from "./effects.js";
 import { speedTreeNode } from "./speedtree.js";
+import { clientRotation } from "./rotation.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 const templates = new Map();     // crc -> Promise<{ node, info }>
 
 export const toScene = (o) => new THREE.Vector3(o.x / 100, o.z / 100, -o.y / 100);
 export function fromScene(v) { return { x: v.x * 100, y: -v.z * 100, z: v.y * 100 }; }
+
 
 function placeholder(color, w, h) {
   const g = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.85 }));
@@ -229,7 +231,8 @@ export class ObjectLayer {
 
   place(node, o) {
     node.position.copy(toScene(o));
-    node.rotation.set(0, THREE.MathUtils.degToRad(o.yaw || 0), 0);
+    if (o.pitch || o.roll) node.quaternion.copy(clientRotation(o));
+    else node.rotation.set(0, THREE.MathUtils.degToRad(o.yaw || 0), 0);
     if (node.userData.ambience || o.ambience) this.placeRange(node, o.ambience || AMBIENCE_DEFAULT);
   }
   // range rings of a sound ambience: outer = where it can be heard, inner = full volume

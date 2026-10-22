@@ -4,7 +4,7 @@ const path = require("path");
 const fs = require("fs");
 const { execFile } = require("child_process");
 const { pathToFileURL } = require("url");
-const { terrainKey, parseAreaData, parseAmbienceData, saveObjects, parseTextureSet, saveTerrain } = require("./maplib");
+const { terrainKey, parseAreaData, parseAmbienceData, saveObjects, parseTextureSet, saveTerrain, isLegacyStudioMap } = require("./maplib");
 const { parseEnvironment } = require("./envlib");
 const { levelsFromLight, shadowRaw, shadowDds } = require("./mapgen/shadow");
 const { readSpawnFile, writeSpawns } = require("./mapgen/spawns");
@@ -129,6 +129,7 @@ function openMap(dir) {
   const editorRoot = path.dirname(dir);
   const textureSetFile = tsRel ? path.join(editorRoot, tsRel) : path.join(editorRoot, "textureset", path.basename(dir) + ".txt");
   const textures = readTextureSet(textureSetFile);
+  const legacyRotation = isLegacyStudioMap(dir);         // saved by an older Map Studio: yaw in the first rotation number
   const terrains = [];
   let objects = [];
   for (let ty = 0; ty < size[1]; ty++) for (let tx = 0; tx < size[0]; tx++) {
@@ -137,7 +138,7 @@ function openMap(dir) {
     if (!fs.existsSync(tdir)) continue;
     const read = (n) => (fs.existsSync(path.join(tdir, n)) ? fs.readFileSync(path.join(tdir, n)) : null);
     terrains.push({ key, tx, ty, height: read("height.raw"), tile: read("tile.raw"), water: read("water.wtr"), attr: read("attr.atr") });
-    objects = objects.concat(parseAreaData(readText(path.join(tdir, "AreaData.txt")), key), parseAmbienceData(readText(path.join(tdir, "AreaAmbienceData.txt")), key));
+    objects = objects.concat(parseAreaData(readText(path.join(tdir, "AreaData.txt")), key, legacyRotation), parseAmbienceData(readText(path.join(tdir, "AreaAmbienceData.txt")), key));
   }
   const envName = (setting.match(/^Environment[ \t]+([^\r\n]*)/m) || [0, ""])[1].trim();
   return { dir, name: path.basename(dir), size, textures, textureSetFile, terrains, objects, environment: loadEnvironment(envName) };
