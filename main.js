@@ -141,7 +141,7 @@ function openMap(dir) {
     objects = objects.concat(parseAreaData(readText(path.join(tdir, "AreaData.txt")), key, legacyRotation), parseAmbienceData(readText(path.join(tdir, "AreaAmbienceData.txt")), key));
   }
   const envName = (setting.match(/^Environment[ \t]+([^\r\n]*)/m) || [0, ""])[1].trim();
-  return { dir, name: path.basename(dir), size, textures, textureSetFile, terrains, objects, environment: loadEnvironment(envName) };
+  return { dir, name: path.basename(dir), size, textures, textureSetFile, terrains, objects, environment: loadEnvironment(envName), legacyRotation };
 }
 
 /* ---------- models: GR2 -> FBX cache ---------- */

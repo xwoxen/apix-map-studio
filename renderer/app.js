@@ -170,9 +170,10 @@ async function save() {
   try {
     const parts = [];
     let backup = "";
-    if (dirty) {
+    // a map from an older Studio (rotation in the first AreaData number) is rewritten in the client order on every save
+    if (dirty || map.legacyRotation) {
       const r = await window.studio.saveMap(map.dir, map.size, objects.map(({ id, terrain, ...o }) => withKind(o)));
-      parts.push(`${r.written} objektov`); backup = r.backup; dirty = false;
+      parts.push(`${r.written} objektov${map.legacyRotation ? " (rotácie prevedené do poradia klienta)" : ""}`); backup = r.backup; dirty = false; map.legacyRotation = false;
     }
     if (envDirty) {
       const r = await window.studio.setEnvironment(map.dir, envName);
@@ -1513,7 +1514,7 @@ const API = {
   status() {
     return map ? {
       map: map.name, dir: map.dir, size: map.size, sizeMeters: [map.size[0] * 256, map.size[1] * 256],
-      objects: objects.length, selected: [...selection], unsaved: { objects: dirty, terrain: heights.isDirty, spawns: spawnsDirty }, mode, tool: brush.tool,
+      objects: objects.length, selected: [...selection], unsaved: { objects: dirty, terrain: heights.isDirty, spawns: spawnsDirty }, legacyRotation: !!map.legacyRotation, mode, tool: brush.tool,
       textures: heights.textures.map((t) => ({ index: t.index, file: t.file, found: Boolean(t.url) })), modelsLoading: layer.pending
     } : { map: null };
   },
