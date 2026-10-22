@@ -182,6 +182,23 @@ Pripraví do stagingu (mimo hry nič nemení):
 Kontroly: BasePosition násobok 25600, Town nesmie byť na blokovanej bunke ani pod objektom, `server_attr` sa dá
 dekódovať (`mapgen/lzo.js`) a sedí bunka po bunke s `attr.atr` – overuje `npm test` (`test/export.js`).
 
+### Podklady pre kvalitné mapy (fáza 6)
+
+- **Katalóg assetov** `node tools/build-catalog.js` (prvýkrát ~5 min, potom z cache) → `%APPDATA%\APIX Map Studio\catalog.json`.
+  Pre každý objekt knižnice: skutočné rozmery z modelu (`tools/gr2info`, klientska Granny 2.4; stromy cez `tools/spt2json`),
+  kolízia z `.mdatr` (pôdorys do výšky postavy), textúry a či existujú, kategória, zdroj (client / fem / editor), či je v hre
+  (pack v `Index`) a ručné hodnotenie z `data/ratings.json`. Varovania: `granny-v7` (Granny 2.4 klienta ho nenačíta – v hre
+  neviditeľný; studňa, krámy, pavilóny, ruiny z dl2_*), `editor-only`, `texture-missing`, `huge`, `tiny`, `no-collision`,
+  `needs-packing` (Fem). V knižnici sa pri objekte ukazuje veľkosť a ⚠ / ⓘ s dôvodom; MCP `mapstudio_catalog` filtruje podľa
+  kategórie, veľkosti, kolízie a použiteľnosti (aj bez spusteného Map Studia).
+- **Analýza máp** `node tools/analyze-maps.js <výstup> meno=<priečinok mapy> …` – hustota a rozostupy stromov, zhlukovanie
+  (Clark-Evans), skladba objektov, prázdne plochy, výškové rozpätie a sklony, textúry podľa sklonu; porovnávacia tabuľka v `analysis.md`.
+- **Cesty a rieky po krivke** – MCP `mapstudio_spline` (API `spline`): road vyrovná terén do plynulého profilu s obmedzeným
+  stúpaním, nepravidelný okraj a krajnica; river vyreže koryto klesajúce po prúde, brehy, hladinu, atribút voda (+ block). Jeden krok Späť.
+  Test: `node test/run-eval.js <mapa> test/spline-demo.js <výstup>` (beží na kópii mapy).
+- Stromy, ktorých `.spt` uvádza textúru listov bez prípony (CompositeMapB1/B2, taoshuleaves, Bamboos…), sa už kreslia s textúrou
+  (klient číta `<meno>.dds`); `.dds`, ktorý je v skutočnosti PNG (spruceleaves.dds), sa načíta podľa obsahu.
+
 ## Ďalšie fázy
 
 2. ~~Štetce terénu (výška, textúry, voda, atribúty).~~ Hotové.

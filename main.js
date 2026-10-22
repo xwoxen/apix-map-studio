@@ -13,6 +13,7 @@ const { suggestSlot } = require("./mapgen/game-slots");
 const { exportGame } = require("./mapgen/export-game");
 
 const { APIX_ROOT, EDITOR_ROOT, PACK_ROOT, getAssetRoots, resolveAsset, getLibrary } = require("./assets");
+const { getCatalog, catalogBrief, queryCatalog } = require("./catalog");
 const GRANNY_EXPORTER = path.join(APIX_ROOT, "_codex_granny_compiled", "GrannyExporter.exe");
 const CACHE = path.join(app.getPath("userData"), "model-cache");
 
@@ -102,6 +103,8 @@ const PREVIEWS = path.join(app.getPath("userData"), "texture-previews");
 function texturePreview(game) {
   const src = resolveAsset(game) || (fs.existsSync(game) ? game : null);
   if (!src) return Promise.resolve(null);
+  // some packs ship PNG data under a .dds name (spruceleaves.dds); the browser decodes it by content
+  try { const fd = fs.openSync(src, "r"), head = Buffer.alloc(4); fs.readSync(fd, head, 0, 4, 0); fs.closeSync(fd); if (head.toString("latin1", 1, 4) === "PNG") return Promise.resolve(assetUrl(src)); } catch { /* unreadable: texconv below */ }
   const name = require("crypto").createHash("md5").update(src.toLowerCase()).digest("hex") + ".png";
   const dest = path.join(PREVIEWS, name);
   if (fs.existsSync(dest)) return Promise.resolve(assetUrl(dest));
@@ -521,7 +524,12 @@ function modelAvailable(p) {
   }
   return p.available;
 }
-ipcMain.handle("library:list", () => [...getLibrary().values()].filter(modelAvailable).map(({ crc, name, type, folder, model }) => ({ crc, name, type, folder, model })));
+// Asset catalog (catalog.js, built by tools/build-catalog.js): size and warnings on library rows, queries for the API.
+ipcMain.handle("catalog:query", (_, q) => queryCatalog(q));
+ipcMain.handle("library:list", () => {
+  const c = getCatalog();
+  return [...getLibrary().values()].filter(modelAvailable).map(({ crc, name, type, folder, model }) => ({ crc, name, type, folder, model, ...(c ? catalogBrief(c.items[crc >>> 0]) : {}) }));
+});
 ipcMain.handle("model:get", (_, crc) => modelFor(crc));
 ipcMain.handle("character:get", (_, cls) => characterParts(cls));
 ipcMain.handle("collision:grid", (_, objects, size) => collisionGrid(objects, size));

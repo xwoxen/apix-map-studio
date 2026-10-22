@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { createRequire } from "node:module";
+const { queryCatalog } = createRequire(import.meta.url)("../catalog.js");
 
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ENDPOINT = path.join(process.env.APPDATA || "", "APIX Map Studio", "control-endpoint.json");
@@ -92,6 +94,22 @@ server.registerTool("mapstudio_search_library", {
   description: "Hľadá objekty (property) podľa názvu alebo priečinka. Typy: Building, Tree, Effect, DungeonBlock…",
   inputSchema: { query: z.string(), type: z.string().optional(), limit: z.number().int().optional() }
 }, tool((a) => call("search_library", a)));
+
+server.registerTool("mapstudio_spline", {
+  title: "Cesta alebo rieka po krivke",
+  description: `Plynulá krivka cez body. road: terén vyrovnaný do plynulého profilu s obmedzeným stúpaním (maxGrade, m na m, predvolene 0,12), krajnica edge m, textúra jadra s nepravidelným okrajom, edgeTexture ako vyšliapaná krajnica. river: koryto, ktoré po prúde (od prvého bodu) len klesá, hĺbka depth m, svahy brehov edge m, hladina 70 % hĺbky, atribút voda, block = neprechodná (predvolene true), bedTexture dno, texture breh. Textúry: číslo mapy alebo herná cesta. Jeden krok Späť. ${POS}`,
+  inputSchema: { kind: z.enum(["road", "river"]), points: z.array(point).min(2).max(500), width: z.number().positive().optional(), edge: z.number().positive().optional(),
+    texture: z.union([z.number(), z.string()]).optional(), edgeTexture: z.union([z.number(), z.string()]).optional(), bedTexture: z.union([z.number(), z.string()]).optional(),
+    depth: z.number().positive().optional(), maxGrade: z.number().positive().optional(), smooth: z.number().positive().optional(), block: z.boolean().optional(), seed: z.number().optional() }
+}, tool((a) => call("spline", a)));
+
+server.registerTool("mapstudio_catalog", {
+  title: "Katalóg assetov",
+  description: "Skutočné rozmery (m, šírka × hĺbka × výška z modelu), kolízia (.mdatr / kmeň), textúry, kategória (tree, plant, rock, building, wall, bridge, light, monument, prop, other), zdroj (client / fem / editor), dostupnosť v hre a ručné hodnotenie. usable = v hre funguje (Fem: po zabalení). Varovania: granny-v7 (hra ho bez prevodu nezobrazí), editor-only, texture-missing, huge, tiny, no-collision, needs-packing. Funguje aj bez spusteného Map Studia; obnova: node tools/build-catalog.js.",
+  inputSchema: { query: z.string().optional(), category: z.string().optional(), type: z.string().optional(), source: z.enum(["client", "fem", "editor"]).optional(),
+    usable: z.boolean().optional(), minSize: z.number().optional().describe("najväčšia vodorovná strana, m"), maxSize: z.number().optional(), maxHeight: z.number().optional(),
+    collision: z.enum(["shapes", "none", "trunk"]).optional(), limit: z.number().int().optional() }
+}, tool(async (a) => queryCatalog(a)));
 
 server.registerTool("mapstudio_add_objects", {
   title: "Pridať objekty",

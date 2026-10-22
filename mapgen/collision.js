@@ -90,4 +90,4 @@ function objectCells(objects, widthM, heightM) {
   return { cells, report };
 }
 
-module.exports = { objectCells, placer, CELL };
+module.exports = { objectCells, placer, shapePoints, REACH, CELL };

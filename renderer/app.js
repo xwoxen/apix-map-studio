@@ -3,6 +3,7 @@ import { FlyControls } from "./fly.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { TerrainModel, TerrainView } from "./terrain.js";
 import { TOOLS, paint, sample, attrMask, BrushCursor } from "./brush.js";
+import { applySpline } from "./spline.js";
 import { ObjectLayer, template, toScene, fromScene, AMBIENCE_DEFAULT } from "./objects.js";
 import { thumbnail } from "./thumbs.js";
 import { Environment } from "./env.js";
@@ -447,6 +448,22 @@ async function renderPrefabs(q) {
       <span class="folder">${p.count} objektov</span></li>`).join("")
     || `<li class="muted">Zatiaľ žiadne prefaby. Vyber viac objektov (Shift) a v paneli Vlastnosti ich ulož ako prefab.</li>`;
 }
+// catalog data on library rows (tools/build-catalog.js): size in meters and a warning badge for problem assets
+const WARNING_TEXT = { "granny-v7": "Granny v7: hra ho bez prevodu nezobrazí", "model-missing": "chýba model", "texture-missing": "chýba textúra",
+  "model-unreadable": "model sa nedá prečítať", huge: "obrovský (nad 40 m)", tiny: "takmer neviditeľný", "editor-only": "len vo WorldEditore, nie v klientovi",
+  "needs-packing": "Fem: pred hrou zabaliť do klienta", "no-collision": "bez kolízie (namaľovať blok)", "sunk-origin": "počiatok pod modelom" };
+const sizeText = (s) => `${s[0].toFixed(1)}×${s[1].toFixed(1)}×${s[2].toFixed(1)} m`;
+function catalogNotes(p) {
+  const notes = (p.warnings || []).filter((w) => w !== "needs-packing" || !p.usableAfterPacking).map((w) => WARNING_TEXT[w] || w);
+  if (p.rating === "avoid" || p.rating === "rim-only") notes.unshift(p.reason || p.rating);
+  return notes;
+}
+function catalogBadge(p) {
+  if (p.usable === undefined) return "";
+  const bad = p.rating === "avoid" || (p.warnings || []).some((w) => ["granny-v7", "model-missing", "texture-missing", "model-unreadable", "huge", "tiny", "editor-only"].includes(w));
+  const notes = catalogNotes(p);
+  return notes.length ? ` <span class="${bad ? "warn" : "note"}" title="${escapeHtml(notes.join(" · "))}">${bad ? "⚠" : "ⓘ"}</span>` : "";
+}
 function renderLibrary() {
   const q = $("lib-search").value.trim().toLowerCase();
   const types = [...new Set(library.map((p) => p.type))].sort();
@@ -456,7 +473,7 @@ function renderLibrary() {
   const rows = libType === RECENT ? recent.map((c) => libByCrc.get(c)).filter((p) => p && matches(p))
     : library.filter((p) => (libType === "Všetko" || p.type === libType) && matches(p));
   $("lib-list").innerHTML = rows.slice(0, 400).map((p) =>
-    `<li data-crc="${p.crc}" class="${placing && placing.crc === p.crc ? "active" : ""}"><img class="thumb" data-crc="${p.crc}" alt=""><span class="name">${escapeHtml(p.name)}</span><span class="type">${escapeHtml(p.type)}</span><span class="folder">${escapeHtml(p.folder)}</span></li>`).join("")
+    `<li data-crc="${p.crc}" class="${placing && placing.crc === p.crc ? "active" : ""}"><img class="thumb" data-crc="${p.crc}" alt=""><span class="name">${escapeHtml(p.name)}${catalogBadge(p)}</span><span class="type">${escapeHtml(p.type)}${p.size ? ` · ${sizeText(p.size)}` : ""}</span><span class="folder">${escapeHtml(p.folder)}</span></li>`).join("")
     + (rows.length > 400 ? `<li class="muted">… a ďalších ${rows.length - 400}, spresni hľadanie</li>` : "")
     + (!rows.length ? `<li class="muted">Nič nenájdené.</li>` : "");
   thumbObserver.disconnect();
@@ -479,7 +496,8 @@ function showPreview(crc) {
   if (!p) { box.hidden = true; return; }
   box.hidden = false;
   $("pv-name").textContent = p.name;
-  $("pv-meta").textContent = `${p.type} · ${p.folder || "property"} · CRC ${p.crc}`;
+  const notes = catalogNotes(p);
+  $("pv-meta").textContent = `${p.type} · ${p.folder || "property"} · CRC ${p.crc}${p.size ? ` · ${sizeText(p.size)}` : ""}${notes.length ? ` · ${notes.join(" · ")}` : ""}`;
   const img = $("pv-img");
   img.removeAttribute("src");
   img.dataset.crc = crc;
@@ -1571,6 +1589,25 @@ const API = {
     updateUi();
     return { changed: [...parts] };
   },
+  // road / river along a curve through points (one undo step); textures as map index or game path
+  async spline({ kind = "road", points, width = kind === "river" ? 6 : 5, edge, texture, edgeTexture, bedTexture, depth, maxGrade, smooth, block = kind === "river", seed = 1 }) {
+    requireMap();
+    if (!["road", "river"].includes(kind)) throw new Error("kind: road alebo river");
+    if (!Array.isArray(points) || points.length < 2) throw new Error("points: aspoň 2 body [x, y] v metroch");
+    const tex = async (t) => (t === undefined ? undefined : typeof t === "number" ? t : (await API.add_texture({ game: t })).index);
+    const opts = { kind, points, width, edge, depth, maxGrade, smooth, block, seed,
+      texture: await tex(texture ?? (kind === "road" ? "d:/ymir work/terrainmaps/a/field/field 02.dds" : "d:/ymir work/terrainmaps/a/beach/beach sand 01.dds")),
+      edgeTexture: await tex(edgeTexture), bedTexture: await tex(bedTexture ?? (kind === "river" ? "d:/ymir work/terrainmaps/12temple/stone_02.dds" : undefined)),
+      attrFlags: { water: attrMask({ water: true }), block: attrMask({ block: true }) } };
+    heights.beginStroke();
+    const r = applySpline(heights, opts);
+    view.refresh(r.keys, r.parts);
+    const snap = heights.endStroke();
+    if (snap) pushHistory(snap, "terrain");
+    updateUi();
+    return { changed: [...r.parts], length: r.length, profile: r.profile, waterLevels: r.waterLevels };
+  },
+  catalog: (query) => window.studio.catalog(query || {}),
   list_prefabs: () => window.studio.prefabs(),
   async save_prefab({ name, ids }) {
     requireMap();

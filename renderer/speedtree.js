@@ -107,7 +107,9 @@ function leafShadowCasters(leaves, texture) {
 
 async function texture(dir, name, repeat) {
   if (!name) return null;
-  const t = await effectTexture(assetPath(dir, name));
+  // many .spt files name the composite map without an extension (CompositeMapB2, taoshuleaves); the client loads <name>.dds
+  const file = /\.[a-z0-9]{2,4}$/i.test(name) ? name : `${name}.dds`;
+  const t = await effectTexture(assetPath(dir, file));
   if (!t) return null;
   t.colorSpace = THREE.SRGBColorSpace;
   if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;

@@ -72,6 +72,8 @@ input[type=search], .inspector input[type=number] {
 .lib-list li.active { border-left-color: var(--accent); background: var(--panel-2); }
 .lib-list .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lib-list .type { font-size: 11px; color: var(--muted); }
+.lib-list .warn { color: #e0a43a; cursor: help; }
+.lib-list .note { color: var(--muted); cursor: help; }
 .lib-list .folder { grid-column: 2 / -1; font-size: 11px; color: var(--muted); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .muted { color: var(--muted); padding: 0 12px; }
 .hint { color: var(--muted); font-size: 12px; padding: 8px 12px; margin: 0; border-top: 1px solid var(--line); }

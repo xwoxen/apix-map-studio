@@ -112,7 +112,8 @@ export function effectTexture(game) {
     textures.set(key, (async () => {
       if (/\.dds$/i.test(game)) {
         const url = await window.studio.textureUrl(game);
-        if (url) return await new Promise((res) => ddsLoader.load(url, res, undefined, () => res(null)));
+        const dds = url ? await new Promise((res) => ddsLoader.load(url, res, undefined, () => res(null))) : null;
+        if (dds) return dds;                                         // else e.g. a PNG saved as .dds: texconv below
       }
       const png = await window.studio.texturePreview(game);       // tga / png via texconv
       return png ? await new Promise((res) => texLoader.load(png, res, undefined, () => res(null))) : null;
