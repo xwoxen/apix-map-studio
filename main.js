@@ -144,10 +144,25 @@ function openMap(dir) {
 
 /* ---------- trees: SpeedTree (.spt) cannot be read, so the view builds a stand-in from its textures ---------- */
 // Bark and leaf textures sit next to the .spt; pick the ones whose names share the longest prefix with the tree.
-function treeInfo(p) {
+// Real SpeedTree geometry: tools/spt2json runs the client's SpeedTreeRT.dll on the .spt (cached as JSON).
+const SPT2JSON = path.join(__dirname, "tools", "spt2json", "spt2json.exe");
+const CLIENT_BIN = path.join(APIX_ROOT, "apix-client", "bin");
+function speedTreeJson(spt, crc) {
+  const out = path.join(CACHE, "tree", String(crc >>> 0), "tree.json");
+  if (fs.existsSync(out)) return Promise.resolve(assetUrl(out));
+  if (!fs.existsSync(SPT2JSON) || !fs.existsSync(path.join(CLIENT_BIN, "SpeedTreeRT.dll"))) return Promise.resolve(null);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  return limitConversions(() => new Promise((resolve) => {
+    execFile(SPT2JSON, [spt, out], { windowsHide: true, timeout: 30000, env: { ...process.env, PATH: `${CLIENT_BIN};${process.env.PATH}` } },
+      () => resolve(fs.existsSync(out) ? assetUrl(out) : null));
+  }));
+}
+async function treeInfo(p) {
   const base = { kind: "tree", size: p.treeSize || 1000, name: p.name, shape: treeShape(p.name + " " + p.model) };
   const spt = resolveAsset(p.model);
   if (!spt) return base;
+  const json = await speedTreeJson(spt, p.crc);
+  if (json) return { kind: "speedtree", url: json, dir: p.model.replace(/\\/g, "/").replace(/\/[^/]*$/, ""), name: p.name, size: base.size };
   const stem = path.basename(spt, path.extname(spt)).toLowerCase();
   let files;
   try { files = fs.readdirSync(path.dirname(spt)).filter((f) => /\.dds$/i.test(f)); } catch { return base; }
@@ -237,9 +252,10 @@ async function recoverTextures(fbx, modelFile, out) {
 const THUMBS = path.join(app.getPath("userData"), "thumbs");
 // effects used to get a yellow box as thumbnail; drop those once so they render as particles
 function refreshEffectThumbs() {
-  const flag = path.join(THUMBS, ".effects-v3");
+  const flag = path.join(THUMBS, ".effects-v4");
   if (fs.existsSync(flag)) return;
-  for (const p of getLibrary().values()) if (/^effect$/i.test(p.type)) fs.rmSync(path.join(THUMBS, `${p.crc >>> 0}.png`), { force: true });
+  // effects, trees (real SpeedTree geometry now), dungeon blocks and ambience had placeholder thumbnails
+  for (const p of getLibrary().values()) if (/^(effect|tree|dungeonblock|ambience)$/i.test(p.type)) fs.rmSync(path.join(THUMBS, `${p.crc >>> 0}.png`), { force: true });
   fs.mkdirSync(THUMBS, { recursive: true });
   fs.writeFileSync(flag, "");
 }
@@ -247,7 +263,7 @@ function thumbFile(crc) { return path.join(THUMBS, `${crc >>> 0}.png`); }
 function modelFor(crc) {
   const p = getLibrary().get(crc >>> 0);
   if (!p) return Promise.resolve({ kind: "unknown" });
-  if (/^tree$/i.test(p.type)) return Promise.resolve(treeInfo(p));
+  if (/^tree$/i.test(p.type)) return treeInfo(p);
   if (/^ambience$/i.test(p.type)) return Promise.resolve({ kind: "ambience", name: p.name });
   if (/\.mse$/i.test(p.model)) {
     // background effect: the renderer reads the .mse and loads its textures next to it

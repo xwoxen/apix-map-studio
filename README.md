@@ -57,8 +57,15 @@ Prvé spustenie po inštalácii: `npm install` (Electron musí mať povolený in
 
 ### Vzhľad a pohodlie (fáza 4)
 
-- **Stromy**: SpeedTree (`.spt`) sa nedá vykresliť, preto Map Studio stavia náhradu z textúr kôry
-  a lístia uložených vedľa `.spt` – kmeň a vetvy v tvare podľa druhu (ihličnan, listnáč, palma, ker).
+- **Stromy**: skutočná geometria SpeedTree – `tools/spt2json` (malý x86 nástroj nad `SpeedTreeRT.dll` klienta,
+  zdroj a `build.cmd` sú v repozitári) vypočíta strom rovnako ako klient (veľkosť zo `.spt`, seed 1) a uloží vetvy,
+  listy a textúry do `model-cache\tree\<crc>\tree.json`. Listy sú karty natočené ku kamere ako v hre a pre tiene
+  majú neviditeľné prekrížené karty. Keď nástroj alebo DLL chýba, ostáva náhradný strom z textúr.
+- **Efekty** (`.mse`): častice sa simulujú ako v EffectLib (emitor, životnosť, gravitácia, odpor vzduchu, farba
+  a priehľadnosť v čase, miešanie) a mesh prvky (`.mde`) sa prehrávajú po snímkach; v knižnici majú živé náhľady.
+- **Dungeon bloky** sa načítajú ako modely (`dungeonblockfile`).
+- **Ambience** (zvuky prostredia) sa čítajú a ukladajú do `AreaAmbienceData.txt` ako v klientovi (dosah, podiel plnej
+  hlasitosti), na mape modrý reproduktor s kruhmi dosahu, v paneli Vlastnosti dosah a hlasitosť.
 - **Prostredie** (`.msenv`): v paneli Vlastnosti (keď nie je vybraný objekt) sa vyberá prostredie
   mapy; zobrazí sa slnko, okolité svetlo, hmla a obloha (6 textúr alebo farebný prechod). Uloží sa do
   `Setting.txt` (`Environment`). Hmla je predvolene odsunutá pre pohľad z diaľky, „Hmla ako v hre“ zapne

@@ -47,7 +47,7 @@ function isEmpty() {
 async function render(crc) {
   const { node } = await template(crc);
   const obj = cloneSkinned(node);
-  const mainScale = obj.isEffect ? setEffectViewport(SIZE, camera.fov) : null;
+  const mainScale = setEffectViewport(SIZE, camera.fov);            // point sprites (effects, leaves) at thumbnail size
   if (obj.isEffect) { await obj.ready; obj.warm(1.5); }   // textures, then let the particles fill in
   if (obj.isEffect) obj.traverse((o) => { if (o.userData.effectMarker) o.visible = false; });
   scene.add(obj);
@@ -63,7 +63,8 @@ async function render(crc) {
   camera.lookAt(center);
   renderer.render(scene, camera);
   scene.remove(obj);
-  if (obj.isEffect) { obj.dispose(); restoreEffectViewport(mainScale); }
+  if (obj.isEffect) obj.dispose();
+  restoreEffectViewport(mainScale);
   if (isEmpty()) return null;                 // nothing visible: don't cache a blank picture
   return window.studio.saveThumb(crc, renderer.domElement.toDataURL("image/png"));
 }

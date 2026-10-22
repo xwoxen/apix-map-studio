@@ -106,7 +106,7 @@ export function assetPath(dir, name) {
   return `${dir}/${n}`;
 }
 const textures = new Map();
-function effectTexture(game) {
+export function effectTexture(game) {
   const key = game.toLowerCase();
   if (!textures.has(key)) {
     textures.set(key, (async () => {
@@ -123,7 +123,7 @@ function effectTexture(game) {
 
 const BLEND = [null, THREE.ZeroFactor, THREE.OneFactor, THREE.SrcColorFactor, THREE.OneMinusSrcColorFactor, THREE.SrcAlphaFactor,
   THREE.OneMinusSrcAlphaFactor, THREE.DstAlphaFactor, THREE.OneMinusDstAlphaFactor, THREE.DstColorFactor, THREE.OneMinusDstColorFactor];
-const POINT_SCALE = { value: 800 };      // pixels per meter at 1 m distance: viewport height / (2 tan(fov/2)), set by the app
+export const POINT_SCALE = { value: 800 };      // pixels per meter at 1 m distance: viewport height / (2 tan(fov/2)), set by the app
 export function setEffectViewport(height, fovDeg) { const old = POINT_SCALE.value; POINT_SCALE.value = height / (2 * Math.tan(THREE.MathUtils.degToRad(fovDeg) / 2)); return old; }
 export function restoreEffectViewport(value) { POINT_SCALE.value = value; }
 

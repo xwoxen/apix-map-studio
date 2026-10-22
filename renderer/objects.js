@@ -5,6 +5,7 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { DDSLoader } from "three/addons/loaders/DDSLoader.js";
 import { loadEffect } from "./effects.js";
+import { speedTreeNode } from "./speedtree.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 const templates = new Map();     // crc -> Promise<{ node, info }>
@@ -169,6 +170,10 @@ const unitCircle = (() => { const pts = []; for (let i = 0; i <= 64; i++) { cons
 export function template(crc) {
   if (templates.has(crc)) return templates.get(crc);
   const job = window.studio.model(crc).then(async (info) => {
+    if (info.kind === "speedtree") {
+      try { return { node: await speedTreeNode(info), info }; }
+      catch (e) { return { node: treeNode(info), info: { ...info, kind: "tree", error: String(e) } }; }
+    }
     if (info.kind === "tree") return { node: treeNode(info), info };
     if (info.kind === "fbx") {
       try {
