@@ -4,7 +4,7 @@ const path = require("path");
 const fs = require("fs");
 const { execFile } = require("child_process");
 const { pathToFileURL } = require("url");
-const { terrainKey, parseAreaData, saveObjects, parseTextureSet, saveTerrain } = require("./maplib");
+const { terrainKey, parseAreaData, parseAmbienceData, saveObjects, parseTextureSet, saveTerrain } = require("./maplib");
 const { parseEnvironment } = require("./envlib");
 const { levelsFromLight, shadowRaw, shadowDds } = require("./mapgen/shadow");
 const { readSpawnFile, writeSpawns } = require("./mapgen/spawns");
@@ -134,7 +134,7 @@ function openMap(dir) {
     if (!fs.existsSync(tdir)) continue;
     const read = (n) => (fs.existsSync(path.join(tdir, n)) ? fs.readFileSync(path.join(tdir, n)) : null);
     terrains.push({ key, tx, ty, height: read("height.raw"), tile: read("tile.raw"), water: read("water.wtr"), attr: read("attr.atr") });
-    objects = objects.concat(parseAreaData(readText(path.join(tdir, "AreaData.txt")), key));
+    objects = objects.concat(parseAreaData(readText(path.join(tdir, "AreaData.txt")), key), parseAmbienceData(readText(path.join(tdir, "AreaAmbienceData.txt")), key));
   }
   const envName = (setting.match(/^Environment[ \t]+([^\r\n]*)/m) || [0, ""])[1].trim();
   return { dir, name: path.basename(dir), size, textures, textureSetFile, terrains, objects, environment: loadEnvironment(envName) };
@@ -248,6 +248,7 @@ function modelFor(crc) {
   const p = getLibrary().get(crc >>> 0);
   if (!p) return Promise.resolve({ kind: "unknown" });
   if (/^tree$/i.test(p.type)) return Promise.resolve(treeInfo(p));
+  if (/^ambience$/i.test(p.type)) return Promise.resolve({ kind: "ambience", name: p.name });
   if (/\.mse$/i.test(p.model)) {
     // background effect: the renderer reads the .mse and loads its textures next to it
     const mse = resolveAsset(p.model);

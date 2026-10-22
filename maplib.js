@@ -17,7 +17,30 @@ function parseAreaData(text, key) {
   return objects;
 }
 
+// AreaAmbienceData.txt (GameLib Area.cpp __Load_LoadAmbience): sound ambience objects with position (cm),
+// CRC, range (cm) and the share of the range played at full volume. They never live in AreaData.txt.
+function parseAmbienceData(text, key) {
+  const objects = [];
+  const re = /Start Object\d+\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\d+)(?:\s+([\d.\-]+))?\s+End Object/g;
+  let m;
+  while ((m = re.exec(text))) {
+    objects.push({ x: +m[1], y: +m[2], z: +m[3], crc: Number(m[4]) >>> 0, yaw: 0, pitch: 0, roll: 0, bias: 0, terrain: key,
+      ambience: { range: Number(m[5]), percent: m[6] !== undefined ? Number(m[6]) : 0 } });
+  }
+  return objects;
+}
+
 function fixed(v) { return Number(v).toFixed(6); }
+
+function formatAmbienceData(list) {
+  const lines = ["AreaAmbienceDataFile", ""];
+  list.forEach((o, i) => {
+    lines.push(`Start Object${String(i).padStart(3, "0")}`, `    ${fixed(o.x)} ${fixed(o.y)} ${fixed(o.z)}`, `    ${o.crc >>> 0}`,
+      `    ${Math.round(o.ambience.range)}`, `    ${fixed(o.ambience.percent || 0)}`, "End Object");
+  });
+  lines.push("", `ObjectCount ${list.length}`);
+  return lines.join(CRLF) + CRLF;
+}
 
 function formatAreaData(list) {
   const lines = ["AreaDataFile", ""];
@@ -44,15 +67,18 @@ function saveObjects(dir, size, objects) {
   let written = 0;
   for (let ty = 0; ty < size[1]; ty++) for (let tx = 0; tx < size[0]; tx++) {
     const key = terrainKey(tx, ty);
-    const file = path.join(dir, key, "AreaData.txt");
-    if (!fs.existsSync(path.dirname(file))) continue;
-    if (fs.existsSync(file)) {
-      fs.mkdirSync(path.join(backup, key), { recursive: true });
-      fs.copyFileSync(file, path.join(backup, key, "AreaData.txt"));
+    if (!fs.existsSync(path.join(dir, key))) continue;
+    const all = groups.get(key) || [];
+    // ambience objects go to AreaAmbienceData.txt, everything else to AreaData.txt
+    for (const [name, list, format] of [["AreaData.txt", all.filter((o) => !o.ambience), formatAreaData], ["AreaAmbienceData.txt", all.filter((o) => o.ambience), formatAmbienceData]]) {
+      const file = path.join(dir, key, name);
+      if (fs.existsSync(file)) {
+        fs.mkdirSync(path.join(backup, key), { recursive: true });
+        fs.copyFileSync(file, path.join(backup, key, name));
+      }
+      fs.writeFileSync(file, format(list));
+      written += list.length;
     }
-    const list = groups.get(key) || [];
-    fs.writeFileSync(file, formatAreaData(list));
-    written += list.length;
   }
   return { written, backup };
 }
@@ -151,6 +177,6 @@ function saveTerrain(dir, payload) {
 }
 
 module.exports = {
-  terrainKey, parseAreaData, formatAreaData, saveObjects,
+  terrainKey, parseAreaData, formatAreaData, parseAmbienceData, formatAmbienceData, saveObjects,
   parseTextureSet, formatTextureSet, textureBlock, decodeWater, encodeWater, decodeAttr, encodeAttr, saveTerrain
 };

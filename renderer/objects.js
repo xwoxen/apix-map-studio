@@ -149,6 +149,23 @@ export function loadFbx(url) {
   return new Promise((resolve, reject) => new FBXLoader(manager).load(url, resolve, undefined, reject));
 }
 
+// Sound ambience: a blue speaker with a note; its range is drawn per placed object (ObjectLayer.place).
+export const AMBIENCE_DEFAULT = { range: 2000, percent: 0.3 };     // cm, share of the range at full volume
+function ambienceNode() {
+  const holder = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12), new THREE.MeshLambertMaterial({ color: 0x3c8ce0, transparent: true, opacity: 0.85 }));
+  body.position.y = 1.2;
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.font = "bold 48px Segoe UI Symbol, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("\u266A", 32, 34);
+  const note = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
+  note.position.y = 1.2; note.scale.set(0.8, 0.8, 1); note.renderOrder = 10;
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.2, 6), new THREE.MeshLambertMaterial({ color: 0x3c8ce0 }));
+  pole.position.y = 0.6;
+  holder.add(body, note, pole);
+  return holder;
+}
+const unitCircle = (() => { const pts = []; for (let i = 0; i <= 64; i++) { const a = (i / 64) * Math.PI * 2; pts.push(new THREE.Vector3(Math.cos(a), 0, Math.sin(a))); } return new THREE.BufferGeometry().setFromPoints(pts); })();
+
 export function template(crc) {
   if (templates.has(crc)) return templates.get(crc);
   const job = window.studio.model(crc).then(async (info) => {
@@ -181,6 +198,7 @@ export function template(crc) {
         return { node: placeholder(0xd04040, 3, 3), info: { ...info, kind: "error", error: String(e) } };
       }
     }
+    if (info.kind === "ambience") return { node: ambienceNode(), info };
     if (info.kind === "effect") {
       try { return { node: await loadEffect(info.url, info.dir), info }; }
       catch (e) { return { node: placeholder(0xe0b040, 1, 1), info: { ...info, kind: "marker", error: String(e) } }; }
@@ -206,6 +224,23 @@ export class ObjectLayer {
   place(node, o) {
     node.position.copy(toScene(o));
     node.rotation.set(0, THREE.MathUtils.degToRad(o.yaw || 0), 0);
+    if (node.userData.ambience || o.ambience) this.placeRange(node, o.ambience || AMBIENCE_DEFAULT);
+  }
+  // range rings of a sound ambience: outer = where it can be heard, inner = full volume
+  placeRange(node, a) {
+    node.userData.ambience = true;
+    let rings = node.getObjectByName("ambience-range");
+    if (!rings) {
+      rings = new THREE.Group(); rings.name = "ambience-range";
+      const outer = new THREE.LineLoop(unitCircle, new THREE.LineBasicMaterial({ color: 0x3c8ce0 }));
+      const inner = new THREE.LineLoop(unitCircle, new THREE.LineBasicMaterial({ color: 0x9cd0ff }));
+      outer.name = "outer"; inner.name = "inner"; outer.raycast = inner.raycast = () => {};
+      rings.add(outer, inner); rings.position.y = 0.3;
+      node.add(rings);
+    }
+    const r = Math.max(0.5, a.range / 100);
+    rings.getObjectByName("outer").scale.setScalar(r);
+    rings.getObjectByName("inner").scale.setScalar(Math.max(0.2, r * (a.percent || 0)));
   }
 
   add(o) {
@@ -215,10 +250,11 @@ export class ObjectLayer {
     this.root.add(node);
     this.nodes.set(o.id, node);
     this.pending++;
-    template(o.crc).then(({ node: tpl }) => {
+    template(o.crc).then(({ node: tpl, info }) => {
       const inst = cloneSkinned(tpl);
       inst.traverse((m) => { m.userData.id = o.id; });
       node.add(inst);
+      if (info.kind === "ambience" && !node.userData.ambience) this.placeRange(node, o.ambience || AMBIENCE_DEFAULT);
     }).finally(() => { this.pending--; if (this.onLoaded) this.onLoaded(this.pending); });
     return node;
   }

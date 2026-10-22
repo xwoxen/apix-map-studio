@@ -50,7 +50,7 @@ function parseProperty(file) {
     crc,
     name: field("propertyname") || path.basename(file, path.extname(file)),
     type: field("propertytype") || "Unknown",
-    model: field("buildingfile") || field("treefile") || field("effectfile") || "",
+    model: field("buildingfile") || field("treefile") || field("effectfile") || field("dungeonblockfile") || "",
     treeSize: Number(field("treesize")) || 0,
     file
   };

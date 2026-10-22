@@ -3,7 +3,7 @@ import { FlyControls } from "./fly.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { TerrainModel, TerrainView } from "./terrain.js";
 import { TOOLS, paint, sample, attrMask, BrushCursor } from "./brush.js";
-import { ObjectLayer, template, toScene, fromScene } from "./objects.js";
+import { ObjectLayer, template, toScene, fromScene, AMBIENCE_DEFAULT } from "./objects.js";
 import { thumbnail } from "./thumbs.js";
 import { Environment } from "./env.js";
 import { Walker, CLASSES } from "./walker.js";
@@ -149,13 +149,21 @@ layer.onLoaded = (pending) => {
   if (!pending && shotRequested) setTimeout(() => window.studio.readyForShot(), 800);
 };
 
+// Sound ambience objects belong in AreaAmbienceData.txt with a range; everything else in AreaData.txt.
+function isAmbience(crc) { const p = libByCrc.get(crc); return Boolean(p && /^ambience$/i.test(p.type)); }
+function withKind(o) {
+  if (o.ambience || isAmbience(o.crc)) return { ...o, ambience: { ...AMBIENCE_DEFAULT, ...(o.ambience || {}) } };
+  const { ambience, ...rest } = o;
+  return rest;
+}
+
 async function save() {
   if (!map) return;
   try {
     const parts = [];
     let backup = "";
     if (dirty) {
-      const r = await window.studio.saveMap(map.dir, map.size, objects.map(({ id, terrain, ...o }) => o));
+      const r = await window.studio.saveMap(map.dir, map.size, objects.map(({ id, terrain, ...o }) => withKind(o)));
       parts.push(`${r.written} objektov`); backup = r.backup; dirty = false;
     }
     if (envDirty) {
@@ -385,6 +393,9 @@ function renderInspector() {
     <div class="title">${info ? escapeHtml(info.name) : "Neznámy objekt"}</div>
     <div class="sub">${info ? escapeHtml(info.type) + " · " : ""}CRC ${selected.crc}</div>
     ${["x", "y", "z", "yaw"].map((k) => `<div class="field"><label for="f-${k}">${k === "yaw" ? "rotácia" : k + " (cm)"}</label><input type="number" id="f-${k}" step="${k === "yaw" ? 15 : 50}"></div>`).join("")}
+    ${isAmbience(selected.crc) || selected.ambience ? `<div class="field"><label for="f-range">dosah (m)</label><input type="number" id="f-range" min="1" step="1"></div>
+      <div class="field"><label for="f-percent">plná hlasitosť %</label><input type="number" id="f-percent" min="0" max="100" step="5"></div>
+      <p class="sub">Zvuk je počuť do dosahu (modrý kruh), naplno vo vnútornom kruhu. Ukladá sa do AreaAmbienceData.txt.</p>` : ""}
     <div class="row-actions"><button type="button" id="i-ground">Položiť na terén</button><button type="button" id="i-dup">Duplikovať</button><button type="button" id="i-copy">Kopírovať</button><button type="button" class="danger" id="i-del">Zmazať</button></div>
     <p class="sub">Shift + klik pridá ďalší objekt, ťahanie po prázdnom mieste vyberie obdĺžnikom.</p>`;
   renderInspectorValues();
@@ -395,6 +406,12 @@ function renderInspector() {
       if (!Number.isFinite(v)) return;
       change(() => { selected[k] = k === "yaw" ? ((v % 360) + 360) % 360 : v; });
     });
+  }
+  if ($("f-range")) {
+    const amb = () => ({ ...AMBIENCE_DEFAULT, ...(selected.ambience || {}) });
+    $("f-range").value = Math.round(amb().range / 100); $("f-percent").value = Math.round(amb().percent * 100);
+    $("f-range").addEventListener("change", (e) => { const v = Number(e.target.value); if (v > 0) change(() => { selected.ambience = { ...amb(), range: v * 100 }; }); });
+    $("f-percent").addEventListener("change", (e) => { const v = Number(e.target.value); if (v >= 0 && v <= 100) change(() => { selected.ambience = { ...amb(), percent: v / 100 }; }); });
   }
   $("i-ground").addEventListener("click", groundSelected);
   $("i-dup").addEventListener("click", duplicateSelected);
@@ -1587,7 +1604,7 @@ window.__studio = {
   },
   setMainMode, setTool, save, undo, redo, startPlacing, groundAt: (x, z) => heights.at(x, z),
   brush, get model() { return heights; }, get objects() { return objects; }, scene,
-  get gizmo() { return gizmo; }, get pivot() { return pivot; }, select,
+  get gizmo() { return gizmo; }, get pivot() { return pivot; }, select, layer,
   // what a click at client (x, y) would hit: object ids (with the mesh name) in hit order
   pickAt(x, y) { return pick({ clientX: x, clientY: y }, [layer.root]).map((h) => ({ id: h.object.userData.id, mesh: h.object.name || h.object.type, dist: +h.distance.toFixed(1) })); },
   nodeInfo(id) {

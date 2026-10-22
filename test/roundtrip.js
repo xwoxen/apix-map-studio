@@ -19,3 +19,14 @@ assert.strictEqual(written, original, "AreaData round trip changed the file");
 assert.ok(fs.existsSync(path.join(result.backup, "000000", "AreaData.txt")), "backup missing");
 console.log(`ok: ${objects.length} objects, identical after round trip`);
 fs.rmSync(tmp, { recursive: true, force: true });
+
+// AreaAmbienceData.txt (sound ambience with range) must also survive a round trip byte for byte
+const { parseAmbienceData, formatAmbienceData } = require("../maplib");
+const ambFile = "C:/Users/micha/Documents/APIX/apix-client/bin/pack/OutdoorA1/metin2_map_a1/003004/areaambiencedata.txt";
+if (fs.existsSync(ambFile)) {
+  const amb = fs.readFileSync(ambFile, "latin1");
+  const parsed = parseAmbienceData(amb, "003004");
+  assert.ok(parsed.length > 0 && parsed[0].ambience.range > 0, "no ambience parsed");
+  assert.strictEqual(formatAmbienceData(parsed), amb, "AreaAmbienceData round trip changed the file");
+  console.log(`ok: ${parsed.length} ambience objects, identical after round trip`);
+}
