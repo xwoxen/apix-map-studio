@@ -18,6 +18,7 @@ import { Environment } from "./env.js";
 import { Walker, CLASSES } from "./walker.js";
 import { SpawnLayer, SPAWN_TYPES } from "./spawns.js";
 import { updateEffects, setEffectViewport } from "./effects.js";
+window.studio.startupMark("modules loaded");
 
 const $ = (id) => document.getElementById(id);
 const deg = THREE.MathUtils.radToDeg, rad = THREE.MathUtils.degToRad;
@@ -442,12 +443,13 @@ function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&am
 
 let libType = "Building";
 const PREFABS = "Prefaby", RECENT = "Posledné";
-// the last placed objects, newest first (per viewer, so browser storage is enough)
+// the last placed objects, newest first, in %APPDATA%/APIX Map Studio/recent-objects.json. Not localStorage: its first
+// access blocked the window for ~5.5 s at every start (Chromium opening its storage).
 let recent = [];
-try { recent = JSON.parse(localStorage.getItem("apix-recent-objects") || "[]"); } catch { recent = []; }
+window.studio.recentObjects().then((list) => { if (Array.isArray(list) && !recent.length) { recent = list; if (libType === RECENT) renderLibrary(); } }).catch(() => {});
 function rememberRecent(crc) {
   recent = [crc, ...recent.filter((c) => c !== crc)].slice(0, 24);
-  try { localStorage.setItem("apix-recent-objects", JSON.stringify(recent)); } catch { /* storage unavailable */ }
+  window.studio.saveRecentObjects(recent).catch(() => {});
 }
 async function renderPrefabs(q) {
   const list = (await window.studio.prefabs()).filter((p) => !q || p.name.toLowerCase().includes(q));
@@ -1215,7 +1217,9 @@ window.addEventListener("beforeunload", (e) => { if (dirty || spawnsDirty || (he
 let shotRequested = false;
 // a map without objects never reports loaded models, so test runs also start once the map is open
 window.studio.onAutoOpen(async (dir) => { shotRequested = true; await openMap(dir); if (!objects.length) setTimeout(() => window.studio.readyForShot(), 800); });
+window.studio.startupMark("app.js running");
 window.studio.library().then((list) => {
+  window.studio.startupMark(`library ready (${list.length})`);
   library = list.sort((a, b) => a.name.localeCompare(b.name));
   for (const p of library) libByCrc.set(p.crc, p);
   renderLibrary();

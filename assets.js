@@ -27,12 +27,31 @@ function getAssetRoots() {
   return roots;
 }
 
+// Folder listings are read once and kept (lower-case names): resolving the ~14 000 library models against 74 asset roots
+// with fs.existsSync took ~24 s at start-up; walking cached listings stops at the first missing folder of a root.
+// clearAssetCache() forgets them (new files written while Map Studio runs).
+const listings = new Map();
+function listing(dir) {
+  let names = listings.get(dir);
+  if (names === undefined) {
+    try { names = new Map(fs.readdirSync(dir).map((n) => [n.toLowerCase(), n])); } catch { names = null; }
+    listings.set(dir, names);
+  }
+  return names;
+}
+function clearAssetCache() { listings.clear(); }
 function resolveAsset(gamePath) {
   const rel = String(gamePath).replace(/\\/g, "/").replace(/^d:\//i, "").replace(/^\/+/, "");
   if (!/^ymir work\//i.test(rel)) return null;
+  const parts = rel.split("/").filter(Boolean);
   for (const root of getAssetRoots()) {
-    const file = path.join(root, rel);
-    if (fs.existsSync(file)) return file;
+    let dir = root;
+    for (let i = 0; i < parts.length; i++) {
+      const names = listing(dir), real = names && names.get(parts[i].toLowerCase());
+      if (!real) { dir = null; break; }
+      dir = path.join(dir, real);
+    }
+    if (dir) return dir;
   }
   return null;
 }
@@ -90,4 +109,4 @@ function getLibrary() {
   return library;
 }
 
-module.exports = { APIX_ROOT, EDITOR_ROOT, PACK_ROOT, getAssetRoots, resolveAsset, getLibrary };
+module.exports = { APIX_ROOT, EDITOR_ROOT, PACK_ROOT, getAssetRoots, resolveAsset, clearAssetCache, getLibrary };

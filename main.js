@@ -1,4 +1,5 @@
 // APIX Map Studio main process: map files, property library, GR2 -> FBX model cache, asset protocol, saving.
+const START = Date.now();
 const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
@@ -559,7 +560,18 @@ ipcMain.handle("region:read", (_, dir, area) => {
   if (!hit) throw new Error(`Mapa ${dir} sa nenašla (mapstudio_list_sources)`);
   return readRegion(hit.dir, area);
 });
+// start-up timing of the last start, %APPDATA%/APIX Map Studio/startup-times.txt (to see what makes the start slow)
+const startupTimes = [];
+function startupMark(label) {
+  startupTimes.push(`${String(Date.now() - START).padStart(6)} ms  ${label}`);
+  try { fs.writeFileSync(path.join(app.getPath("userData"), "startup-times.txt"), startupTimes.join("\r\n") + "\r\n"); } catch { /* not ready yet */ }
+}
+ipcMain.handle("startup:mark", (_, label) => startupMark("renderer: " + label));
+const RECENT_FILE = () => path.join(app.getPath("userData"), "recent-objects.json");
+ipcMain.handle("recent:get", () => { try { return JSON.parse(fs.readFileSync(RECENT_FILE(), "utf8")); } catch { return []; } });
+ipcMain.handle("recent:set", (_, list) => { fs.writeFileSync(RECENT_FILE(), JSON.stringify((list || []).slice(0, 24))); return true; });
 ipcMain.handle("library:list", () => {
+  startupMark("library:list start");
   const c = getCatalog();
   return [...getLibrary().values()].filter(modelAvailable).map(({ crc, name, type, folder, model }) => ({ crc, name, type, folder, model, ...(c ? catalogBrief(c.items[crc >>> 0]) : {}) }));
 });
@@ -698,11 +710,13 @@ app.whenReady().then(() => {
     if (!allowed(file) || !fs.existsSync(file)) return new Response("not found", { status: 404 });
     return net.fetch(pathToFileURL(file).toString());
   });
+  startupMark("app ready");
   createWindow();
   if (!process.argv.includes("--screenshot")) startBridge();
   // Dev/test flags: --open <map dir> loads a map on start, --screenshot <png> saves the view and quits.
   const open = argValue("--open"), shot = argValue("--screenshot");
   win.webContents.on("did-finish-load", () => {
+    startupMark("page loaded");
     if (open) win.webContents.send("map:auto-open", open);
     if (shot) {
       ipcMain.once("app:ready-for-shot", () => setTimeout(async () => {
